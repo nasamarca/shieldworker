@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useActiveAccount } from "thirdweb/react";
+import { waitForReceipt } from "thirdweb";
 import { client } from "@/lib/thirdweb";
 import { useWorkerByAddress } from "@/hooks/useShieldWorker";
 import { useRegisterIdentity, useRegisterWorker } from "@/hooks/useShieldActions";
@@ -71,7 +72,11 @@ export default function RegisterPage() {
   const handleStep1 = async () => {
     try {
       const metadataURI = `https://shieldworker.xyz/metadata/${account.address}.json`;
-      const receipt = await registerIdentity(metadataURI);
+      const txResult = await registerIdentity(metadataURI);
+
+      // sendTransaction only returns { transactionHash } — we need logs
+      // waitForReceipt returns the full receipt with logs
+      const receipt = await waitForReceipt(txResult);
 
       // Parse agentId from ERC-721 Transfer event in tx receipt
       const mintedAgentId = parseAgentIdFromReceipt(receipt);

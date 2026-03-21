@@ -21,7 +21,8 @@ export default function ContributePage() {
   const { approve, isPending: approvePending } = useApproveUSDC(client);
   const { contribute, isPending: contributePending } = useContribute(client);
   const { contributeX402, isPending: x402Pending } = useContributeX402(client);
-  const [useDirectMode, setUseDirectMode] = useState(false);
+  // Direct contribute as primary (x402 settlement has Fuji bundler limitation)
+  const [useDirectMode, setUseDirectMode] = useState(true);
 
   if (!account) {
     return (
@@ -56,8 +57,9 @@ export default function ContributePage() {
         });
       }
       refetch();
-    } catch (e: any) {
-      toast.error(`x402 contribution failed: ${e.message}`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error(`x402 contribution failed: ${msg}`);
     }
   };
 
@@ -79,7 +81,8 @@ export default function ContributePage() {
       });
       refetch();
     } catch (e: any) {
-      toast.error(`Contribution failed: ${e.message}`);
+      const msg = e?.message ?? e?.reason ?? (typeof e === "string" ? e : JSON.stringify(e));
+      toast.error(`Contribution failed: ${msg}`);
     }
   };
 
@@ -154,13 +157,35 @@ export default function ContributePage() {
             <span className="font-semibold">{formatUSDC(poolBalance)}</span>
           </div>
 
-          {/* x402 primary button */}
-          {!useDirectMode ? (
+          {/* Direct contribute (primary) */}
+          {useDirectMode ? (
+            <div className="space-y-2">
+              <Button
+                onClick={handleContributeDirect}
+                disabled={isPending}
+                className="w-full bg-blue-600 hover:bg-blue-700"
+                size="lg"
+              >
+                {approvePending || contributePending
+                  ? "Processing..."
+                  : "Contribute $1 / Contribuir $1"}
+              </Button>
+              <p className="text-xs text-gray-400 text-center">
+                Approve USDC → contribute to pool (2 transactions)
+              </p>
+              <button
+                onClick={() => setUseDirectMode(false)}
+                className="text-xs text-gray-400 hover:text-gray-600 underline w-full text-center"
+              >
+                Try x402 HTTP Payment Protocol (experimental)
+              </button>
+            </div>
+          ) : (
             <div className="space-y-2">
               <Button
                 onClick={handleContributeX402}
                 disabled={isPending}
-                className="w-full bg-blue-600 hover:bg-blue-700"
+                className="w-full bg-green-600 hover:bg-green-700"
                 size="lg"
               >
                 {x402Pending ? "Processing x402 Payment..." : "Contribute $1 via x402 / Contribuir $1"}
@@ -174,29 +199,7 @@ export default function ContributePage() {
                 onClick={() => setUseDirectMode(true)}
                 className="text-xs text-gray-400 hover:text-gray-600 underline w-full text-center"
               >
-                Having issues? Use direct contribution instead
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <Button
-                onClick={handleContributeDirect}
-                disabled={isPending}
-                className="w-full bg-gray-700 hover:bg-gray-800"
-                size="lg"
-              >
-                {approvePending || contributePending
-                  ? "Processing..."
-                  : "Contribute $1 Direct / Contribuir Directo"}
-              </Button>
-              <p className="text-xs text-gray-400 text-center">
-                Direct on-chain: approve USDC → contribute (2 transactions)
-              </p>
-              <button
-                onClick={() => setUseDirectMode(false)}
-                className="text-xs text-gray-400 hover:text-gray-600 underline w-full text-center"
-              >
-                Switch back to x402 payment
+                Switch to direct contribution
               </button>
             </div>
           )}

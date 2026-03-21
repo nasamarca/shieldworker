@@ -1,6 +1,4 @@
-"use client";
-
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useReadContract, useActiveAccount } from "thirdweb/react";
 import {
   readContract,
@@ -12,7 +10,7 @@ import {
 import { avalancheFuji } from "thirdweb/chains";
 import { addresses, abis } from "@/lib/contracts";
 
-// ── Contract getters ────────────────────────────────────────────────
+// ── Contract getters (raw — use useShieldContracts for memoized) ────
 
 export function getShieldContracts(client: ThirdwebClient) {
   return {
@@ -48,11 +46,16 @@ export function getShieldContracts(client: ThirdwebClient) {
   };
 }
 
+// S4: Memoize contract instances to prevent unnecessary re-renders
+function useShieldContracts(client: ThirdwebClient) {
+  return useMemo(() => getShieldContracts(client), [client]);
+}
+
 // ── Read hooks ──────────────────────────────────────────────────────
 
 export function useWorkerByAddress(client: ThirdwebClient) {
   const account = useActiveAccount();
-  const contracts = getShieldContracts(client);
+  const contracts = useShieldContracts(client);
 
   const { data: agentId } = useReadContract({
     contract: contracts.registry,
@@ -77,21 +80,21 @@ export function useWorkerByAddress(client: ThirdwebClient) {
 }
 
 export function useCoverage(client: ThirdwebClient, agentId: bigint) {
-  const contracts = getShieldContracts(client);
+  const contracts = useShieldContracts(client);
 
   const { data: coverage, refetch: refetchCoverage } = useReadContract({
     contract: contracts.pool,
     method:
       "function getCoverage(uint256) view returns ((uint256 agentId, uint256 expiresAt, uint256 contributionCount))",
     params: [agentId],
-    queryOptions: { enabled: agentId > 0n },
+    queryOptions: { enabled: agentId > 0n, refetchInterval: 15_000 },
   });
 
   const { data: isActive, refetch: refetchActive } = useReadContract({
     contract: contracts.pool,
     method: "function isActive(uint256) view returns (bool)",
     params: [agentId],
-    queryOptions: { enabled: agentId > 0n },
+    queryOptions: { enabled: agentId > 0n, refetchInterval: 15_000 },
   });
 
   return {
@@ -105,30 +108,34 @@ export function useCoverage(client: ThirdwebClient, agentId: bigint) {
 }
 
 export function usePoolStats(client: ThirdwebClient) {
-  const contracts = getShieldContracts(client);
+  const contracts = useShieldContracts(client);
 
   const { data: poolBalance } = useReadContract({
     contract: contracts.pool,
     method: "function getPoolBalance() view returns (uint256)",
     params: [],
+    queryOptions: { refetchInterval: 10_000 },
   });
 
   const { data: totalContributions } = useReadContract({
     contract: contracts.pool,
     method: "function totalContributions() view returns (uint256)",
     params: [],
+    queryOptions: { refetchInterval: 10_000 },
   });
 
   const { data: totalPayouts } = useReadContract({
     contract: contracts.pool,
     method: "function totalPayouts() view returns (uint256)",
     params: [],
+    queryOptions: { refetchInterval: 10_000 },
   });
 
   const { data: totalWorkers } = useReadContract({
     contract: contracts.registry,
     method: "function totalRegistered() view returns (uint256)",
     params: [],
+    queryOptions: { refetchInterval: 10_000 },
   });
 
   return {
@@ -141,7 +148,7 @@ export function usePoolStats(client: ThirdwebClient) {
 
 export function useIsAdmin(client: ThirdwebClient) {
   const account = useActiveAccount();
-  const contracts = getShieldContracts(client);
+  const contracts = useShieldContracts(client);
 
   const { data: oracleRole } = useReadContract({
     contract: contracts.claimManager,
@@ -160,7 +167,7 @@ export function useIsAdmin(client: ThirdwebClient) {
 }
 
 export function useTriggers(client: ThirdwebClient) {
-  const contracts = getShieldContracts(client);
+  const contracts = useShieldContracts(client);
 
   const { data: triggerCount, refetch: refetchCount } = useReadContract({
     contract: contracts.claimManager,
@@ -186,8 +193,9 @@ export interface TriggerData {
   fullyProcessed: boolean;
 }
 
+// S3: Parallel RPC calls with Promise.all instead of sequential loop
 export function useTriggerList(client: ThirdwebClient) {
-  const contracts = getShieldContracts(client);
+  const contracts = useShieldContracts(client);
   const { triggerCount, refetchCount } = useTriggers(client);
   const [triggers, setTriggers] = useState<TriggerData[]>([]);
   const [loading, setLoading] = useState(false);
@@ -202,16 +210,16 @@ export function useTriggerList(client: ThirdwebClient) {
     setLoading(true);
     setError(null);
     try {
-      const results: TriggerData[] = [];
-      for (let i = 0; i < count; i++) {
-        const data = await readContract({
-          contract: contracts.claimManager,
-          method:
-            "function getTrigger(uint256) view returns ((string eventType, string zone, uint256 timestamp, uint256 totalPayouts, uint256 workersAffected, uint256 workersProcessed, uint256 nextOffset, uint256 payoutPerWorker, bool fullyProcessed))",
-          params: [BigInt(i)],
-        });
-        results.push({ id: BigInt(i), ...data });
-      }
+      const results = await Promise.all(
+        Array.from({ length: count }, (_, i) =>
+          readContract({
+            contract: contracts.claimManager,
+            method:
+              "function getTrigger(uint256) view returns ((string eventType, string zone, uint256 timestamp, uint256 totalPayouts, uint256 workersAffected, uint256 workersProcessed, uint256 nextOffset, uint256 payoutPerWorker, bool fullyProcessed))",
+            params: [BigInt(i)],
+          }).then((data) => ({ id: BigInt(i), ...data }))
+        )
+      );
       // Reverse: newest first
       setTriggers(results.reverse());
     } catch (e) {
@@ -239,16 +247,24 @@ export function useTriggerList(client: ThirdwebClient) {
 // ── Affected workers for a trigger ──────────────────────────────────
 
 export function useAffectedWorkers(client: ThirdwebClient, triggerId: bigint | null) {
-  const contracts = getShieldContracts(client);
+  const contracts = useShieldContracts(client);
   const [workers, setWorkers] = useState<bigint[]>([]);
 
   useEffect(() => {
     if (triggerId === null) return;
+    let cancelled = false;
     readContract({
       contract: contracts.claimManager,
       method: "function getAffectedWorkers(uint256) view returns (uint256[])",
       params: [triggerId],
-    }).then((v) => setWorkers([...v])).catch(() => {});
+    })
+      .then((v) => {
+        if (!cancelled) setWorkers([...v]);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [triggerId, contracts.claimManager]);
 
   return workers;
@@ -275,9 +291,16 @@ export interface PayoutEvent {
 }
 
 // Fuji RPC typically supports 2k–10k block range for eth_getLogs.
-// We paginate backwards in chunks to stay within limits.
 const EVENT_BLOCK_CHUNK = 2048n;
-const EVENT_MAX_CHUNKS = 5; // 5 × 2048 = ~10k blocks lookback
+
+// S1: Safe bigint comparison — coerce both sides to BigInt
+function safeBigIntEq(a: unknown, b: bigint): boolean {
+  try {
+    return BigInt(a as any) === b;
+  } catch {
+    return false;
+  }
+}
 
 async function fetchEventsPaginated<T>(
   contract: ReturnType<typeof getContract>,
@@ -300,23 +323,18 @@ async function fetchEventsPaginated<T>(
     lastError = e instanceof Error ? e.message : "Indexer fetch failed";
   }
 
-  // Paginated fallback: fetch in smaller chunks via direct RPC
-  for (let i = 0; i < EVENT_MAX_CHUNKS; i++) {
-    try {
-      const logs = await getContractEvents({
-        contract,
-        events: [event],
-        blockRange: EVENT_BLOCK_CHUNK,
-        useIndexer: false,
-      });
-      const filtered = logs.filter(filterFn).map(mapFn).reverse();
-      return { data: filtered, error: null };
-    } catch (e) {
-      lastError = e instanceof Error ? e.message : "RPC fetch failed";
-      // Try next smaller chunk — but current impl uses same range,
-      // so break to avoid identical retry
-      break;
-    }
+  // Paginated fallback: fetch in smaller chunk via direct RPC
+  try {
+    const logs = await getContractEvents({
+      contract,
+      events: [event],
+      blockRange: EVENT_BLOCK_CHUNK,
+      useIndexer: false,
+    });
+    const filtered = logs.filter(filterFn).map(mapFn).reverse();
+    return { data: filtered, error: null };
+  } catch (e) {
+    lastError = e instanceof Error ? e.message : "RPC fetch failed";
   }
 
   // All attempts failed — return error so UI can warn user
@@ -324,7 +342,7 @@ async function fetchEventsPaginated<T>(
 }
 
 export function useContributionHistory(client: ThirdwebClient, agentId: bigint) {
-  const contracts = getShieldContracts(client);
+  const contracts = useShieldContracts(client);
   const [events, setEvents] = useState<ContributionEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -342,15 +360,16 @@ export function useContributionHistory(client: ThirdwebClient, agentId: bigint) 
     const result = await fetchEventsPaginated<ContributionEvent>(
       contracts.pool,
       contributionEvent,
-      (log: any) => log.args.agentId === agentId,
+      // S1: safe bigint comparison
+      (log: any) => safeBigIntEq(log.args.agentId, agentId),
       (log: any) => ({
-        agentId: log.args.agentId,
+        agentId: BigInt(log.args.agentId),
         payer: log.args.payer,
-        amount: log.args.amount,
-        newExpiresAt: log.args.newExpiresAt,
-        streak: log.args.streak,
+        amount: BigInt(log.args.amount),
+        newExpiresAt: BigInt(log.args.newExpiresAt),
+        streak: BigInt(log.args.streak),
         transactionHash: log.transactionHash,
-        blockNumber: log.blockNumber,
+        blockNumber: BigInt(log.blockNumber),
       }),
     );
 
@@ -367,7 +386,7 @@ export function useContributionHistory(client: ThirdwebClient, agentId: bigint) 
 }
 
 export function usePayoutHistory(client: ThirdwebClient, agentId: bigint) {
-  const contracts = getShieldContracts(client);
+  const contracts = useShieldContracts(client);
   const [events, setEvents] = useState<PayoutEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -385,13 +404,14 @@ export function usePayoutHistory(client: ThirdwebClient, agentId: bigint) {
     const result = await fetchEventsPaginated<PayoutEvent>(
       contracts.pool,
       payoutEvent,
-      (log: any) => log.args.agentId === agentId,
+      // S1: safe bigint comparison
+      (log: any) => safeBigIntEq(log.args.agentId, agentId),
       (log: any) => ({
-        agentId: log.args.agentId,
+        agentId: BigInt(log.args.agentId),
         recipient: log.args.recipient,
-        amount: log.args.amount,
+        amount: BigInt(log.args.amount),
         transactionHash: log.transactionHash,
-        blockNumber: log.blockNumber,
+        blockNumber: BigInt(log.blockNumber),
       }),
     );
 

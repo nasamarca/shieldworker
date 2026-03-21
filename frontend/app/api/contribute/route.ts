@@ -7,7 +7,7 @@ import {
   Engine,
 } from "thirdweb";
 import { avalancheFuji } from "thirdweb/chains";
-import { settlePayment, facilitator } from "thirdweb/x402";
+import { facilitator } from "thirdweb/x402";
 import { addresses, abis } from "@/lib/contracts";
 
 // Force dynamic — this route must never be statically pre-rendered
@@ -56,109 +56,188 @@ function getRegistryContract() {
   });
 }
 
-// ── GET handler: settlePayment handles 402 → payment → settle ───────
+// ── x402 v1 helpers (Fuji only supports v1) ─────────────────────────
 
-export async function GET(request: NextRequest) {
-  const agentId = request.nextUrl.searchParams.get("agentId");
+const PRICE_CONFIG = {
+  amount: "1000000",
+  asset: { address: addresses.usdc, decimals: 6 },
+};
 
-  if (!agentId) {
-    return Response.json({ error: "Missing agentId" }, { status: 400 });
-  }
-
-  // Extract payment header (x402 v2 uses "x-payment", v1 uses "payment-signature")
-  const paymentData =
-    request.headers.get("x-payment") ??
-    request.headers.get("payment-signature");
-
-  const resourceUrl = request.nextUrl.toString();
-
-  const result = await settlePayment({
+async function getPaymentRequirementsV1(resourceUrl: string) {
+  const f = getThirdwebFacilitator();
+  // Force x402Version: 1 — Fuji does not support v2
+  const result = await (f.accepts as any)({
     resourceUrl,
     method: "GET",
-    paymentData,
-    payTo: process.env.RELAYER_WALLET_ADDRESS!,
     network: avalancheFuji,
-    price: {
-      amount: "1000000", // 1 USDC (6 decimals)
-      asset: {
-        address: addresses.usdc,
-        decimals: 6,
-      },
+    payTo: process.env.RELAYER_WALLET_ADDRESS!,
+    price: PRICE_CONFIG,
+    x402Version: 1,
+    routeConfig: {
+      description: "ShieldWorker weekly contribution — $1 USDC for 7-day coverage",
+      mimeType: "application/json",
     },
-    facilitator: getThirdwebFacilitator(),
+  });
+  return result;
+}
+
+async function verifyAndSettlePayment(paymentData: string, resourceUrl: string) {
+  const f = getThirdwebFacilitator();
+
+  // Decode the payment from the header
+  const { decodePayment } = await import("thirdweb/x402");
+  const decodedPayment = decodePayment(paymentData);
+
+  // Get the full payment requirements from accepts (v1) — includes all required fields
+  const acceptsResult = await (f.accepts as any)({
+    resourceUrl,
+    method: "GET",
+    network: avalancheFuji,
+    payTo: process.env.RELAYER_WALLET_ADDRESS!,
+    price: PRICE_CONFIG,
+    x402Version: 1,
     routeConfig: {
       description: "ShieldWorker weekly contribution — $1 USDC for 7-day coverage",
       mimeType: "application/json",
     },
   });
 
-  // Payment required — return 402 with requirements
-  if (result.status === 402) {
-    return Response.json(result.responseBody, {
-      status: 402,
-      headers: result.responseHeaders,
-    });
+  // Find matching payment requirements for the payment
+  const paymentRequirements = acceptsResult.responseBody.accepts?.[0];
+  if (!paymentRequirements) {
+    return { success: false, error: "No payment requirements available" };
   }
 
-  // Payment settled — verify worker is registered before calling contributeFor
-  // This prevents the edge case where user pays x402 but contributeFor reverts
-  try {
-    const isRegistered = await readContract({
-      contract: getRegistryContract(),
-      method: "function isRegistered(uint256) view returns (bool)",
-      params: [BigInt(agentId)],
-    });
+  // Verify the payment
+  const verifyResult = await f.verify(decodedPayment, paymentRequirements);
+  if (!verifyResult.isValid) {
+    return { success: false, error: verifyResult.invalidReason || "Payment verification failed" };
+  }
 
-    if (!isRegistered) {
+  // Settle the payment
+  const settleResult = await f.settle(decodedPayment, paymentRequirements);
+  if (!settleResult.success) {
+    return { success: false, error: settleResult.errorReason || "Payment settlement failed" };
+  }
+
+  return { success: true, receipt: settleResult };
+}
+
+// ── GET handler ─────────────────────────────────────────────────────
+
+export async function GET(request: NextRequest) {
+  try {
+    const raw = request.nextUrl.searchParams.get("agentId");
+
+    // Validate agentId
+    if (!raw || !/^\d+$/.test(raw)) {
+      return Response.json({ error: "Missing or invalid agentId" }, { status: 400 });
+    }
+    const parsedAgentId = BigInt(raw);
+    if (parsedAgentId === 0n) {
+      return Response.json({ error: "agentId must be > 0" }, { status: 400 });
+    }
+
+    // Verify worker is registered BEFORE payment
+    try {
+      const isRegistered = await readContract({
+        contract: getRegistryContract(),
+        method: "function isRegistered(uint256) view returns (bool)",
+        params: [parsedAgentId],
+      });
+      if (!isRegistered) {
+        return Response.json(
+          { error: "Worker not registered. Register first at /register." },
+          { status: 400 }
+        );
+      }
+    } catch {
+      // proceed — on-chain will enforce
+    }
+
+    const paymentData =
+      request.headers.get("x-payment") ??
+      request.headers.get("payment-signature");
+
+    const resourceUrl = request.nextUrl.toString();
+
+    // ── No payment header → return 402 with v1 requirements ─────────
+    if (!paymentData) {
+      console.log("[x402] No payment header — returning 402 requirements (v1)");
+      try {
+        const requirements = await getPaymentRequirementsV1(resourceUrl);
+        return Response.json(requirements.responseBody, {
+          status: 402,
+          headers: { "Content-Type": "application/json" },
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Failed to get payment requirements";
+        console.error("[x402] accepts() failed:", msg);
+        return Response.json({ error: `x402 setup error: ${msg}` }, { status: 500 });
+      }
+    }
+
+    // ── Has payment header → verify & settle ────────────────────────
+    console.log("[x402] Payment header received — verifying & settling");
+    let settlement;
+    try {
+      settlement = await verifyAndSettlePayment(paymentData, resourceUrl);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Settlement error";
+      console.error("[x402] verify/settle failed:", msg);
+      return Response.json({ error: `x402 settle error: ${msg}` }, { status: 500 });
+    }
+
+    if (!settlement.success) {
       return Response.json(
-        {
-          success: false,
-          error: "Worker not registered. Register first at /register before contributing.",
-        },
-        { status: 400 }
+        { error: settlement.error },
+        { status: 402 }
       );
     }
-  } catch {
-    // If registry check fails, proceed anyway — contributeFor will revert if invalid
-  }
 
-  try {
+    // ── Payment settled → call contributeFor ────────────────────────
+    console.log("[x402] Payment settled — calling contributeFor");
     const tx = prepareContractCall({
       contract: getPoolContract(),
       method: "function contributeFor(uint256)",
-      params: [BigInt(agentId)],
+      params: [parsedAgentId],
     });
 
     const relayer = getRelayerWallet();
 
-    // Enqueue tx via thirdweb Engine server wallet
     const { transactionId } = await relayer.enqueueTransaction({
       transaction: tx,
     });
 
-    // Wait for tx to be mined
     const { transactionHash } = await Engine.waitForTransactionHash({
       client: getServerClient(),
       transactionId,
     });
 
-    return Response.json(
-      {
-        success: true,
-        agentId,
-        txHash: transactionHash,
-        message: "Coverage activated for 7 days",
-      },
-      {
-        status: 200,
-        headers: result.responseHeaders,
-      }
-    );
+    // Read coverage expiry
+    let coverageExpiresAt: string | null = null;
+    try {
+      const coverage = await readContract({
+        contract: getPoolContract(),
+        method:
+          "function getCoverage(uint256) view returns ((uint256 agentId, uint256 expiresAt, uint256 contributionCount))",
+        params: [parsedAgentId],
+      });
+      coverageExpiresAt = new Date(Number(coverage.expiresAt) * 1000).toISOString();
+    } catch {
+      // non-critical
+    }
+
+    return Response.json({
+      success: true,
+      agentId: parsedAgentId.toString(),
+      txHash: transactionHash,
+      coverageExpiresAt,
+      message: "Coverage activated for 7 days",
+    });
   } catch (error) {
-    const msg = error instanceof Error ? error.message : "contributeFor failed";
-    return Response.json(
-      { success: false, error: msg },
-      { status: 500 }
-    );
+    const msg = error instanceof Error ? error.message : "Internal server error";
+    console.error("[x402] Unhandled error:", msg);
+    return Response.json({ success: false, error: msg }, { status: 500 });
   }
 }
