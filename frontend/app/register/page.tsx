@@ -137,18 +137,18 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="max-w-lg mx-auto px-4 py-16">
+    <div className="max-w-lg mx-auto px-4 py-16 animate-fade-up">
       <h1 className="text-3xl font-bold mb-2">Register as Worker</h1>
       <p className="text-gray-500 mb-8">Registrarse como trabajador</p>
 
       <div className="flex items-center gap-2 mb-8">
-        <Badge variant={step >= 1 ? "default" : "outline"}>Step 1: Mint Identity</Badge>
-        <div className="h-px flex-1 bg-gray-200" />
-        <Badge variant={step >= 2 ? "default" : "outline"}>Step 2: Link to ShieldWorker</Badge>
+        <Badge variant={step >= 1 ? "default" : "outline"} className="transition-all">Step 1: Mint Identity</Badge>
+        <div className={`h-px flex-1 transition-colors ${step >= 2 ? "bg-blue-400" : "bg-gray-200"}`} />
+        <Badge variant={step >= 2 ? "default" : "outline"} className="transition-all">Step 2: Link to ShieldWorker</Badge>
       </div>
 
       {step === 1 && (
-        <Card>
+        <Card className="glass-card rounded-2xl border-0 animate-fade-up">
           <CardHeader>
             <CardTitle>Step 1: Create On-Chain Identity</CardTitle>
           </CardHeader>
@@ -157,7 +157,7 @@ export default function RegisterPage() {
               This mints an agentId NFT in the official ERC-8004 IdentityRegistry.
               You <strong>own</strong> this NFT — it&apos;s your portable, self-sovereign identity.
             </p>
-            <Button onClick={handleStep1} disabled={identityPending} className="w-full" size="lg">
+            <Button onClick={handleStep1} disabled={identityPending} className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 shadow-lg shadow-blue-500/20" size="lg">
               {identityPending ? "Minting Identity..." : "Mint Identity NFT / Crear Identidad"}
             </Button>
           </CardContent>
@@ -165,7 +165,7 @@ export default function RegisterPage() {
       )}
 
       {step === 2 && (
-        <Card>
+        <Card className="glass-card rounded-2xl border-0 animate-fade-up">
           <CardHeader>
             <CardTitle>Step 2: Link to ShieldWorker</CardTitle>
           </CardHeader>
@@ -178,7 +178,7 @@ export default function RegisterPage() {
               <label className="block text-sm font-medium mb-1">Agent ID</label>
               <input
                 type="number"
-                className="w-full border rounded-md px-3 py-2 text-sm bg-gray-50"
+                className="w-full border rounded-xl px-3 py-2.5 text-sm bg-white/60 backdrop-blur-sm focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all outline-none"
                 value={agentId?.toString() ?? ""}
                 onChange={(e) => setAgentId(BigInt(e.target.value || "0"))}
                 placeholder="Enter your agentId"
@@ -193,7 +193,7 @@ export default function RegisterPage() {
             <div>
               <label className="block text-sm font-medium mb-1">Worker Type / Tipo de Trabajo</label>
               <select
-                className="w-full border rounded-md px-3 py-2 text-sm bg-white"
+                className="w-full border rounded-xl px-3 py-2.5 text-sm bg-white/60 backdrop-blur-sm focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all outline-none"
                 value={workerType}
                 onChange={(e) => setWorkerType(e.target.value)}
               >
@@ -207,7 +207,7 @@ export default function RegisterPage() {
             <div>
               <label className="block text-sm font-medium mb-1">Zone / Zona</label>
               <select
-                className="w-full border rounded-md px-3 py-2 text-sm bg-white"
+                className="w-full border rounded-xl px-3 py-2.5 text-sm bg-white/60 backdrop-blur-sm focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all outline-none"
                 value={zone}
                 onChange={(e) => setZone(e.target.value)}
               >
@@ -221,7 +221,7 @@ export default function RegisterPage() {
             <Button
               onClick={handleStep2}
               disabled={workerPending || !workerType || !zone || !agentId}
-              className="w-full"
+              className="w-full bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 shadow-lg shadow-emerald-500/20"
               size="lg"
             >
               {workerPending ? "Registering..." : "Complete Registration / Completar Registro"}

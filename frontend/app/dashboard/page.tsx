@@ -38,7 +38,7 @@ export default function DashboardPage() {
         <h1 className="text-2xl font-bold mb-4">Not Registered</h1>
         <p className="text-gray-500 mb-4">Register first to see your dashboard.</p>
         <Link href="/register">
-          <Button className="bg-blue-600 hover:bg-blue-700">Register Now</Button>
+          <Button className="bg-gradient-to-r from-blue-600 to-blue-700 shadow-lg shadow-blue-500/20">Register Now</Button>
         </Link>
       </div>
     );
@@ -47,15 +47,15 @@ export default function DashboardPage() {
   const expiresAt = coverage?.expiresAt ?? 0n;
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-16">
+    <div className="max-w-4xl mx-auto px-4 py-16 animate-fade-up">
       <h1 className="text-3xl font-bold mb-2">Worker Dashboard</h1>
       <p className="text-gray-500 mb-8">Panel del Trabajador</p>
 
       {/* Coverage card */}
-      <Card className="mb-6">
+      <Card className={`mb-6 glass-card rounded-2xl border-0 ${isActive ? "glow-green" : ""}`}>
         <CardContent className="pt-6">
           <div className="flex items-center gap-4 mb-6">
-            <div className={`w-16 h-16 rounded-full flex items-center justify-center text-3xl ${isActive ? "bg-blue-100" : "bg-gray-100"}`}>
+            <div className={`w-16 h-16 rounded-2xl flex items-center justify-center text-3xl transition-all ${isActive ? "bg-gradient-to-br from-green-400 to-emerald-500 shadow-lg shadow-green-500/20 animate-float" : "bg-gray-100"}`}>
               {isActive ? "🛡️" : "⚪"}
             </div>
             <div>
@@ -71,7 +71,7 @@ export default function DashboardPage() {
 
           {!isActive && (
             <Link href="/contribute">
-              <Button className="w-full bg-blue-600 hover:bg-blue-700">
+              <Button className="w-full bg-gradient-to-r from-blue-600 to-blue-700 shadow-lg shadow-blue-500/20">
                 Activate Coverage — Contribute $1 / Contribuir $1
               </Button>
             </Link>
@@ -80,8 +80,8 @@ export default function DashboardPage() {
       </Card>
 
       {/* Stats grid */}
-      <div className="grid md:grid-cols-2 gap-4 mb-6">
-        <Card>
+      <div className="grid md:grid-cols-2 gap-4 mb-6 stagger">
+        <Card className="glass-card rounded-2xl border-0 hover-lift animate-fade-up">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm text-gray-500">Worker Profile</CardTitle>
           </CardHeader>
@@ -109,7 +109,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="glass-card rounded-2xl border-0 hover-lift animate-fade-up">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm text-gray-500">Reputation / Reputación</CardTitle>
           </CardHeader>
@@ -139,7 +139,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Contribution History */}
-      <Card className="mb-6">
+      <Card className="mb-6 glass-card rounded-2xl border-0">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm text-gray-500">
             Contribution History / Historial de Aportes
@@ -161,7 +161,7 @@ export default function DashboardPage() {
               {contributions.map((c, i) => (
                 <div
                   key={`${c.transactionHash}-${i}`}
-                  className="flex items-center justify-between py-2 border-b last:border-0 text-sm"
+                  className="flex items-center justify-between py-2 border-b border-white/30 last:border-0 text-sm"
                 >
                   <div className="flex items-center gap-3">
                     <span className="text-green-600 text-lg">+</span>
@@ -188,7 +188,7 @@ export default function DashboardPage() {
       </Card>
 
       {/* Payout History */}
-      <Card className="mb-6">
+      <Card className="mb-6 glass-card rounded-2xl border-0">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm text-gray-500">
             Payout History / Historial de Pagos
@@ -210,7 +210,7 @@ export default function DashboardPage() {
               {payouts.map((p, i) => (
                 <div
                   key={`${p.transactionHash}-${i}`}
-                  className="flex items-center justify-between py-2 border-b last:border-0 text-sm"
+                  className="flex items-center justify-between py-2 border-b border-white/30 last:border-0 text-sm"
                 >
                   <div className="flex items-center gap-3">
                     <span className="text-blue-600 text-lg">$</span>
@@ -240,7 +240,7 @@ export default function DashboardPage() {
 
       <div className="text-center">
         <Link href="/contribute">
-          <Button variant="outline">Contribute Again / Contribuir de Nuevo</Button>
+          <Button variant="outline" className="glass-card hover-lift">Contribute Again / Contribuir de Nuevo</Button>
         </Link>
       </div>
     </div>

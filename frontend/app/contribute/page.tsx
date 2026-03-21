@@ -90,16 +90,16 @@ export default function ContributePage() {
   const expiresAt = coverage?.expiresAt ?? 0n;
 
   return (
-    <div className="max-w-lg mx-auto px-4 py-16">
+    <div className="max-w-lg mx-auto px-4 py-16 animate-fade-up">
       <h1 className="text-3xl font-bold mb-2">Contribute / Contribuir</h1>
       <p className="text-gray-500 mb-8">Weather Protection Plan — $1/week</p>
 
       {/* Coverage status */}
-      <Card className="mb-6">
+      <Card className={`mb-6 glass-card rounded-2xl border-0 ${isActive ? "glow-green" : ""}`}>
         <CardContent className="pt-6">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
-              <div className={`w-12 h-12 rounded-full flex items-center justify-center text-2xl ${isActive ? "bg-green-100" : "bg-gray-100"}`}>
+              <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-2xl transition-all ${isActive ? "bg-gradient-to-br from-green-400 to-emerald-500 shadow-lg shadow-green-500/20" : "bg-gray-100"}`}>
                 {isActive ? "🛡️" : "⚪"}
               </div>
               <div>
@@ -135,7 +135,7 @@ export default function ContributePage() {
       </Card>
 
       {/* Plan + contribute */}
-      <Card className="mb-6">
+      <Card className="mb-6 glass-card rounded-2xl border-0">
         <CardHeader>
           <CardTitle>Weather Protection / Protección Climática</CardTitle>
         </CardHeader>
@@ -163,7 +163,7 @@ export default function ContributePage() {
               <Button
                 onClick={handleContributeDirect}
                 disabled={isPending}
-                className="w-full bg-blue-600 hover:bg-blue-700"
+                className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 shadow-lg shadow-blue-500/20"
                 size="lg"
               >
                 {approvePending || contributePending
@@ -185,7 +185,7 @@ export default function ContributePage() {
               <Button
                 onClick={handleContributeX402}
                 disabled={isPending}
-                className="w-full bg-green-600 hover:bg-green-700"
+                className="w-full bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 shadow-lg shadow-emerald-500/20"
                 size="lg"
               >
                 {x402Pending ? "Processing x402 Payment..." : "Contribute $1 via x402 / Contribuir $1"}

@@ -1,0 +1,10 @@
+export { HeroSection } from "./HeroSection";
+export { LiveStats } from "./LiveStats";
+export { HowItWorks } from "./HowItWorks";
+export { ProblemSection } from "./ProblemSection";
+export { RealImpact } from "./RealImpact";
+export { TechStack } from "./TechStack";
+export { Roadmap } from "./Roadmap";
+export { Compliance } from "./Compliance";
+export { CtaSection } from "./CtaSection";
+export { Footer } from "./Footer";

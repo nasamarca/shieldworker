@@ -58,7 +58,7 @@ function TriggerCard({
     Number(trigger.workersAffected) - Number(trigger.workersProcessed);
 
   return (
-    <Card className={trigger.fullyProcessed ? "opacity-75" : ""}>
+    <Card className={`glass-card rounded-2xl border-0 ${trigger.fullyProcessed ? "opacity-75" : "hover-lift"}`}>
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <CardTitle className="text-base">
@@ -108,7 +108,7 @@ function TriggerCard({
             <Button
               onClick={() => onExecutePayout(trigger.id)}
               disabled={payoutPending}
-              className="w-full bg-green-600 hover:bg-green-700"
+              className="w-full bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 shadow-lg shadow-emerald-500/20"
               size="sm"
             >
               {payoutPending
@@ -197,27 +197,27 @@ export default function AdminPage() {
   const completedTriggers = triggers.filter((t) => t.fullyProcessed);
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-16">
+    <div className="max-w-4xl mx-auto px-4 py-16 animate-fade-up">
       <div className="flex items-center gap-3 mb-8">
         <h1 className="text-3xl font-bold">Admin Panel</h1>
         <Badge variant="outline">ORACLE_ROLE</Badge>
       </div>
 
       {/* Pool overview */}
-      <div className="grid grid-cols-3 gap-4 mb-8">
-        <Card>
+      <div className="grid grid-cols-3 gap-4 mb-8 stagger">
+        <Card className="glass-card rounded-2xl border-0 hover-lift animate-fade-up">
           <CardContent className="pt-6 text-center">
             <p className="text-sm text-gray-500">Pool Balance</p>
             <p className="text-2xl font-bold">{formatUSDC(poolBalance)}</p>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="glass-card rounded-2xl border-0 hover-lift animate-fade-up">
           <CardContent className="pt-6 text-center">
             <p className="text-sm text-gray-500">Workers</p>
             <p className="text-2xl font-bold">{totalWorkers.toString()}</p>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="glass-card rounded-2xl border-0 hover-lift animate-fade-up">
           <CardContent className="pt-6 text-center">
             <p className="text-sm text-gray-500">Total Payouts</p>
             <p className="text-2xl font-bold">{formatUSDC(totalPayouts)}</p>
@@ -226,7 +226,7 @@ export default function AdminPage() {
       </div>
 
       {/* Submit trigger */}
-      <Card className="mb-8">
+      <Card className="mb-8 glass-card rounded-2xl border-0">
         <CardHeader>
           <CardTitle>Submit Trigger Event / Reportar Evento</CardTitle>
         </CardHeader>
@@ -235,7 +235,7 @@ export default function AdminPage() {
             <div>
               <label className="block text-sm font-medium mb-1">Event Type</label>
               <select
-                className="w-full border rounded-md px-3 py-2 text-sm bg-white"
+                className="w-full border rounded-xl px-3 py-2.5 text-sm bg-white/60 backdrop-blur-sm focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all outline-none"
                 value={eventType}
                 onChange={(e) => setEventType(e.target.value)}
               >
@@ -248,7 +248,7 @@ export default function AdminPage() {
             <div>
               <label className="block text-sm font-medium mb-1">Zone</label>
               <select
-                className="w-full border rounded-md px-3 py-2 text-sm bg-white"
+                className="w-full border rounded-xl px-3 py-2.5 text-sm bg-white/60 backdrop-blur-sm focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all outline-none"
                 value={zone}
                 onChange={(e) => setZone(e.target.value)}
               >
@@ -262,7 +262,7 @@ export default function AdminPage() {
           <Button
             onClick={handleSubmitTrigger}
             disabled={triggerPending || !eventType || !zone}
-            className="w-full bg-red-600 hover:bg-red-700"
+            className="w-full bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 shadow-lg shadow-red-500/20"
           >
             {triggerPending ? "Submitting..." : "Submit Trigger / Reportar Evento"}
           </Button>
