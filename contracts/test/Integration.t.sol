@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.34;
 
-import {Test, console} from "forge-std/Test.sol";
-import {ShieldWorkerRegistry} from "../src/ShieldWorkerRegistry.sol";
-import {ProtectionPool} from "../src/ProtectionPool.sol";
-import {ClaimManager} from "../src/ClaimManager.sol";
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import { Test, console } from "forge-std/Test.sol";
+import { ShieldWorkerRegistry } from "../src/ShieldWorkerRegistry.sol";
+import { ProtectionPool } from "../src/ProtectionPool.sol";
+import { ClaimManager } from "../src/ClaimManager.sol";
+import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 /// @dev Mock USDC for testing (not deployed on-chain, only used in Foundry tests)
 contract MockUSDC is ERC20 {
-    constructor() ERC20("Mock USDC", "mUSDC") {}
+    constructor() ERC20("Mock USDC", "mUSDC") { }
 
     function mint(address to, uint256 amount) external {
         _mint(to, amount);
@@ -386,6 +386,360 @@ contract IntegrationTest is Test {
         pool.contribute(agentId);
         vm.stopPrank();
         assertTrue(pool.isActive(agentId));
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    //              REGISTRY — MISSING UNHAPPY PATH + EDGE CASES
+    // ══════════════════════════════════════════════════════════════════════
+
+    function test_register_duplicate_agentId_reverts() public {
+        // María registers with agentId 1
+        vm.prank(maria);
+        uint256 agentId = identityRegistry.register("uri");
+        vm.prank(maria);
+        registry.registerWorker(agentId, "street_vendor", "flores", "uri");
+
+        // Transfer agentId ownership concept: Juan registers a NEW agentId,
+        // but we simulate agentId already used by setting registeredAt != 0.
+        // The only way to hit AgentIdAlreadyRegistered is if a different wallet
+        // tries to register an agentId that already has a profile.
+        // We need the mock to return juan as ownerOf(agentId) — not possible with current mock.
+        // Instead: María's agentId=1 is registered. If someone else somehow owns agentId=1
+        // and tries to register it, they get AgentIdAlreadyRegistered.
+        // With current mock this is not directly testable, so we test via a second mock approach:
+        // We create a scenario where two different agents map to same agentId.
+        // Actually — let's test it properly: if María registered agentId 1, and Juan somehow
+        // also owns agentId 1 in IdentityRegistry (not possible with mock), we need a different approach.
+        // The realistic scenario: María registers agentId 1. Then María transfers the NFT to Juan
+        // (not supported by mock). So we test the error directly by using a custom mock.
+
+        // Simpler approach: we can test this by directly writing to the workers mapping
+        // via a second registration contract. But the cleanest way is:
+        // Register worker profile for agentId X, then have the actual NFT owner (different address)
+        // try to register the same agentId.
+        // Since our mock doesn't support transfer, we'll verify the error path exists
+        // by noting the first two checks pass (ownerOf == sender, addressToAgentId == 0)
+        // but registeredAt != 0. This requires a fresh address that owns the same agentId.
+        // We cannot do this with the current mock. Let's use vm.store or a workaround.
+
+        // Practical test: use vm.mockCall to make identityRegistry.ownerOf(agentId) return juan
+        vm.mockCall(address(identityRegistry), abi.encodeWithSignature("ownerOf(uint256)", agentId), abi.encode(juan));
+        vm.prank(juan);
+        vm.expectRevert(abi.encodeWithSignature("AgentIdAlreadyRegistered(uint256)", agentId));
+        registry.registerWorker(agentId, "gig", "palermo", "uri2");
+
+        vm.clearMockedCalls();
+    }
+
+    function test_getWorkersByZone_returns_correct_list() public {
+        _registerWorker(maria, "street_vendor", "flores");
+        _registerWorker(juan, "gig", "flores");
+        _registerWorker(pedro, "construction", "palermo");
+
+        uint256[] memory floresWorkers = registry.getWorkersByZone("flores");
+        assertEq(floresWorkers.length, 2);
+        assertEq(floresWorkers[0], registry.addressToAgentId(maria));
+        assertEq(floresWorkers[1], registry.addressToAgentId(juan));
+
+        uint256[] memory palermoWorkers = registry.getWorkersByZone("palermo");
+        assertEq(palermoWorkers.length, 1);
+        assertEq(palermoWorkers[0], registry.addressToAgentId(pedro));
+
+        // Empty zone
+        uint256[] memory emptyZone = registry.getWorkersByZone("la_boca");
+        assertEq(emptyZone.length, 0);
+    }
+
+    function test_updateStreak_only_protectionPool() public {
+        _registerWorker(maria, "street_vendor", "flores");
+        uint256 agentId = registry.addressToAgentId(maria);
+
+        // Random address tries to call updateStreak → reverts
+        vm.prank(maria);
+        vm.expectRevert(abi.encodeWithSignature("UnauthorizedCaller(address,address)", maria, address(pool)));
+        registry.updateStreak(agentId, 5, CONTRIBUTION);
+    }
+
+    function test_updatePayoutStats_only_protectionPool() public {
+        _registerWorker(maria, "street_vendor", "flores");
+        uint256 agentId = registry.addressToAgentId(maria);
+
+        // Random address tries to call updatePayoutStats → reverts
+        vm.prank(maria);
+        vm.expectRevert(abi.encodeWithSignature("UnauthorizedCaller(address,address)", maria, address(pool)));
+        registry.updatePayoutStats(agentId, PAYOUT);
+    }
+
+    function test_setProtectionPool_only_admin() public {
+        vm.prank(maria);
+        vm.expectRevert();
+        registry.setProtectionPool(address(0x1234));
+    }
+
+    function test_setClaimManager_only_admin() public {
+        vm.prank(maria);
+        vm.expectRevert();
+        registry.setClaimManager(address(0x1234));
+    }
+
+    function test_setProtectionPool_zero_address_reverts() public {
+        vm.prank(deployer);
+        vm.expectRevert(abi.encodeWithSignature("ZeroAddress()"));
+        registry.setProtectionPool(address(0));
+    }
+
+    function test_setClaimManager_zero_address_reverts() public {
+        vm.prank(deployer);
+        vm.expectRevert(abi.encodeWithSignature("ZeroAddress()"));
+        registry.setClaimManager(address(0));
+    }
+
+    function test_registry_constructor_zero_address_reverts() public {
+        vm.expectRevert(abi.encodeWithSignature("ZeroAddress()"));
+        new ShieldWorkerRegistry(address(0));
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    //              POOL — MISSING UNHAPPY PATH + EDGE CASES
+    // ══════════════════════════════════════════════════════════════════════
+
+    function test_contribute_not_agent_owner_reverts() public {
+        _registerWorker(maria, "street_vendor", "flores");
+        uint256 mariaAgentId = registry.addressToAgentId(maria);
+
+        // Juan tries to contribute with María's agentId → NotAgentOwner
+        vm.startPrank(juan);
+        usdc.approve(address(pool), CONTRIBUTION);
+        vm.expectRevert(abi.encodeWithSignature("NotAgentOwner(uint256,address)", mariaAgentId, juan));
+        pool.contribute(mariaAgentId);
+        vm.stopPrank();
+    }
+
+    function test_contributeFor_non_relayer_reverts() public {
+        _registerWorker(maria, "street_vendor", "flores");
+        uint256 agentId = registry.addressToAgentId(maria);
+
+        // María (not a relayer) tries to call contributeFor → AccessControl revert
+        vm.startPrank(maria);
+        usdc.approve(address(pool), CONTRIBUTION);
+        vm.expectRevert();
+        pool.contributeFor(agentId);
+        vm.stopPrank();
+    }
+
+    function test_executePayout_after_coverage_expiry_still_works() public {
+        // NOTE: executePayout does NOT check isActive() — coverage is verified at trigger
+        // submission time (snapshot). This prevents denying legitimate payouts when coverage
+        // expires between trigger and batch execution (Security Finding #1).
+        _registerWorker(maria, "street_vendor", "flores");
+        uint256 agentId = registry.addressToAgentId(maria);
+        _contributeFor(maria, agentId);
+
+        // Warp past coverage expiry
+        vm.warp(block.timestamp + 8 days);
+        assertFalse(pool.isActive(agentId));
+
+        // ClaimManager can still execute payout (coverage was active at trigger time)
+        uint256 balanceBefore = usdc.balanceOf(maria);
+        vm.prank(address(claimManager));
+        pool.executePayout(agentId, PAYOUT);
+        assertEq(usdc.balanceOf(maria), balanceBefore + PAYOUT);
+    }
+
+    function test_executePayout_insufficient_balance_reverts() public {
+        _registerWorker(maria, "street_vendor", "flores");
+        uint256 agentId = registry.addressToAgentId(maria);
+        _contributeFor(maria, agentId);
+
+        // Try to pay out more than pool balance
+        uint256 hugeAmount = 999_999_000_000; // way more than pool has
+        uint256 poolBal = usdc.balanceOf(address(pool));
+
+        vm.prank(address(claimManager));
+        vm.expectRevert(abi.encodeWithSignature("InsufficientPoolBalance(uint256,uint256)", hugeAmount, poolBal));
+        pool.executePayout(agentId, hugeAmount);
+    }
+
+    function test_executePayout_only_claim_manager_role() public {
+        _registerWorker(maria, "street_vendor", "flores");
+        uint256 agentId = registry.addressToAgentId(maria);
+        _contributeFor(maria, agentId);
+
+        // Random address tries to call executePayout → AccessControl revert
+        vm.prank(maria);
+        vm.expectRevert();
+        pool.executePayout(agentId, PAYOUT);
+    }
+
+    function test_seedPool_only_admin_role() public {
+        vm.startPrank(maria);
+        usdc.approve(address(pool), CONTRIBUTION);
+        vm.expectRevert();
+        pool.seedPool(CONTRIBUTION);
+        vm.stopPrank();
+    }
+
+    function test_pause_only_admin_role() public {
+        vm.prank(maria);
+        vm.expectRevert();
+        pool.pause();
+    }
+
+    function test_unpause_only_admin_role() public {
+        // First pause as admin
+        vm.prank(deployer);
+        pool.pause();
+
+        // Non-admin tries to unpause → reverts
+        vm.prank(maria);
+        vm.expectRevert();
+        pool.unpause();
+    }
+
+    function test_pool_constructor_zero_address_reverts() public {
+        vm.expectRevert(abi.encodeWithSignature("ZeroAddress()"));
+        new ProtectionPool(address(0), address(registry), address(identityRegistry));
+
+        vm.expectRevert(abi.encodeWithSignature("ZeroAddress()"));
+        new ProtectionPool(address(usdc), address(0), address(identityRegistry));
+
+        vm.expectRevert(abi.encodeWithSignature("ZeroAddress()"));
+        new ProtectionPool(address(usdc), address(registry), address(0));
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    //           CLAIM MANAGER — MISSING UNHAPPY PATH + EDGE CASES
+    // ══════════════════════════════════════════════════════════════════════
+
+    function test_submitTrigger_only_oracle_role() public {
+        vm.prank(maria);
+        vm.expectRevert();
+        claimManager.submitTrigger("heavy_rain", "flores");
+    }
+
+    function test_executeBatchPayout_pagination() public {
+        // Register 5 workers in flores
+        address[5] memory workers;
+        for (uint256 i = 0; i < 5; i++) {
+            workers[i] = makeAddr(string(abi.encodePacked("pag_worker", i)));
+            usdc.mint(workers[i], CONTRIBUTION);
+            _registerWorker(workers[i], "street_vendor", "flores");
+            uint256 agentId = registry.addressToAgentId(workers[i]);
+            _contributeFor(workers[i], agentId);
+        }
+
+        // Submit trigger
+        vm.prank(deployer);
+        uint256 triggerId = claimManager.submitTrigger("heavy_rain", "flores");
+
+        // Process in batches of 2
+        vm.prank(deployer);
+        claimManager.executeBatchPayout(triggerId, 0, 2);
+
+        ClaimManager.TriggerEvent memory trigger = claimManager.getTrigger(triggerId);
+        assertEq(trigger.workersProcessed, 2);
+        assertFalse(trigger.fullyProcessed);
+
+        // Process next batch
+        vm.prank(deployer);
+        claimManager.executeBatchPayout(triggerId, 2, 2);
+
+        trigger = claimManager.getTrigger(triggerId);
+        assertEq(trigger.workersProcessed, 4);
+        assertFalse(trigger.fullyProcessed);
+
+        // Process final batch
+        vm.prank(deployer);
+        claimManager.executeBatchPayout(triggerId, 4, 2);
+
+        trigger = claimManager.getTrigger(triggerId);
+        assertEq(trigger.workersProcessed, 5);
+        assertTrue(trigger.fullyProcessed);
+        assertEq(trigger.totalPayouts, PAYOUT * 5);
+    }
+
+    function test_executeBatchPayout_trigger_not_found() public {
+        vm.prank(deployer);
+        vm.expectRevert(abi.encodeWithSignature("TriggerNotFound(uint256)", 999));
+        claimManager.executeBatchPayout(999, 0, 20);
+    }
+
+    function test_executeBatchPayout_invalid_offset() public {
+        _registerWorker(maria, "street_vendor", "flores");
+        uint256 agentId = registry.addressToAgentId(maria);
+        _contributeFor(maria, agentId);
+
+        vm.prank(deployer);
+        uint256 triggerId = claimManager.submitTrigger("heavy_rain", "flores");
+
+        // Offset beyond affected workers array length
+        vm.prank(deployer);
+        vm.expectRevert(abi.encodeWithSignature("InvalidBatchRange(uint256,uint256)", 50, 1));
+        claimManager.executeBatchPayout(triggerId, 50, 20);
+    }
+
+    function test_executeBatchPayout_only_oracle_role() public {
+        _registerWorker(maria, "street_vendor", "flores");
+        uint256 agentId = registry.addressToAgentId(maria);
+        _contributeFor(maria, agentId);
+
+        vm.prank(deployer);
+        uint256 triggerId = claimManager.submitTrigger("heavy_rain", "flores");
+
+        // Non-oracle tries to execute payout
+        vm.prank(maria);
+        vm.expectRevert();
+        claimManager.executeBatchPayout(triggerId, 0, 20);
+    }
+
+    function test_executeBatchPayout_pays_even_after_coverage_expires() public {
+        // Security Finding #1: Workers who had active coverage at trigger time SHOULD
+        // receive payout even if coverage expires before batch execution. The trigger
+        // snapshot is the source of truth, not the current coverage state.
+        _registerWorker(maria, "street_vendor", "flores");
+        _registerWorker(juan, "gig", "flores");
+        uint256 mariaId = registry.addressToAgentId(maria);
+        uint256 juanId = registry.addressToAgentId(juan);
+
+        _contributeFor(maria, mariaId);
+        _contributeFor(juan, juanId);
+
+        // Submit trigger — both active at this moment (snapshot taken)
+        vm.prank(deployer);
+        uint256 triggerId = claimManager.submitTrigger("heavy_rain", "flores");
+
+        ClaimManager.TriggerEvent memory trigger = claimManager.getTrigger(triggerId);
+        assertEq(trigger.workersAffected, 2);
+
+        // Warp so coverage expires BEFORE payout execution
+        vm.warp(block.timestamp + 8 days);
+        assertFalse(pool.isActive(mariaId));
+        assertFalse(pool.isActive(juanId));
+
+        // Execute payout — should STILL pay both workers (they had coverage at trigger time)
+        uint256 mariaBefore = usdc.balanceOf(maria);
+        uint256 juanBefore = usdc.balanceOf(juan);
+
+        vm.prank(deployer);
+        claimManager.executeBatchPayout(triggerId, 0, 20);
+
+        // Both workers should receive payout despite expired coverage
+        assertEq(usdc.balanceOf(maria), mariaBefore + PAYOUT);
+        assertEq(usdc.balanceOf(juan), juanBefore + PAYOUT);
+
+        // Verify trigger fully processed — both workers paid despite expired coverage
+        trigger = claimManager.getTrigger(triggerId);
+        assertEq(trigger.workersProcessed, 2);
+        assertEq(trigger.totalPayouts, PAYOUT * 2);
+        assertTrue(trigger.fullyProcessed);
+    }
+
+    function test_claimManager_constructor_zero_address_reverts() public {
+        vm.expectRevert(abi.encodeWithSignature("ZeroAddress()"));
+        new ClaimManager(address(0), address(registry));
+
+        vm.expectRevert(abi.encodeWithSignature("ZeroAddress()"));
+        new ClaimManager(address(pool), address(0));
     }
 
     // ══════════════════════════════════════════════════════════════════════

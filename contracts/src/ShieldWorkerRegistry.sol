@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.34;
 
-import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
-import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
-import {IIdentityRegistry} from "./interfaces/IIdentityRegistry.sol";
+import { AccessControl } from "@openzeppelin/contracts/access/AccessControl.sol";
+import { ReentrancyGuardTransient } from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
+import { IIdentityRegistry } from "./interfaces/IIdentityRegistry.sol";
 import "./interfaces/Errors.sol";
 
 /**
@@ -122,16 +122,18 @@ contract ShieldWorkerRegistry is AccessControl, ReentrancyGuardTransient {
      */
     function setProtectionPool(address _pool) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (_pool == address(0)) revert ZeroAddress();
+        require(protectionPool == address(0), "Already set");
         protectionPool = _pool;
     }
 
     /**
-     * @notice Set the ClaimManager contract address. Reserved for future cross-contract calls.
+     * @notice Set the ClaimManager contract address. Can only be set once (set-once guard).
      * @dev Should be called once after all contracts are deployed.
      * @param _claimManager Address of the deployed ClaimManager contract
      */
     function setClaimManager(address _claimManager) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (_claimManager == address(0)) revert ZeroAddress();
+        require(claimManager == address(0), "Already set");
         claimManager = _claimManager;
     }
 
@@ -159,6 +161,9 @@ contract ShieldWorkerRegistry is AccessControl, ReentrancyGuardTransient {
         string calldata zone,
         string calldata metadataURI
     ) external nonReentrant {
+        // 0. Reject agentId 0 — default value for addressToAgentId mapping would cause collision
+        require(agentId > 0, "agentId must be > 0");
+
         // 1. Verify worker owns the agentId NFT in official IdentityRegistry
         if (identityRegistry.ownerOf(agentId) != msg.sender) {
             revert NotAgentOwner(agentId, msg.sender);
@@ -252,7 +257,7 @@ contract ShieldWorkerRegistry is AccessControl, ReentrancyGuardTransient {
      * @param contributionAmount The USDC amount contributed (6 decimals)
      */
     function updateStreak(uint256 agentId, uint256 newStreak, uint256 contributionAmount) external {
-        if (msg.sender != protectionPool) revert NotAgentOwner(agentId, msg.sender);
+        if (msg.sender != protectionPool) revert UnauthorizedCaller(msg.sender, protectionPool);
         workers[agentId].contributionStreak = newStreak;
         workers[agentId].totalContributed += contributionAmount;
         emit StreakUpdated(agentId, newStreak);
@@ -265,7 +270,7 @@ contract ShieldWorkerRegistry is AccessControl, ReentrancyGuardTransient {
      * @param amount The payout USDC amount received (6 decimals)
      */
     function updatePayoutStats(uint256 agentId, uint256 amount) external {
-        if (msg.sender != protectionPool) revert NotAgentOwner(agentId, msg.sender);
+        if (msg.sender != protectionPool) revert UnauthorizedCaller(msg.sender, protectionPool);
         workers[agentId].totalPayoutsReceived += amount;
         emit PayoutStatsUpdated(agentId, amount);
     }

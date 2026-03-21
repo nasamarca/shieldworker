@@ -76,3 +76,8 @@ error InvalidBatchRange(uint256 offset, uint256 total);
 
 /// @notice Thrown when a zero address is provided where a valid address is required
 error ZeroAddress();
+
+/// @notice Thrown when a function is called by an unauthorized contract
+/// @param caller The unauthorized address
+/// @param expected The expected authorized address
+error UnauthorizedCaller(address caller, address expected);

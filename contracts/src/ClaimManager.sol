@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.34;
 
-import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
-import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
-import {ProtectionPool} from "./ProtectionPool.sol";
-import {ShieldWorkerRegistry} from "./ShieldWorkerRegistry.sol";
+import { AccessControl } from "@openzeppelin/contracts/access/AccessControl.sol";
+import { ReentrancyGuardTransient } from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
+import { ProtectionPool } from "./ProtectionPool.sol";
+import { ShieldWorkerRegistry } from "./ShieldWorkerRegistry.sol";
 import "./interfaces/Errors.sol";
 
 /**
@@ -214,6 +214,9 @@ contract ClaimManager is AccessControl, ReentrancyGuardTransient {
         uint256 end = offset + limit;
         if (end > affected.length) end = affected.length;
 
+        // Cache constants outside loop to avoid repeated external calls
+        uint256 payoutAmount = pool.DEFAULT_PAYOUT();
+        uint256 maxPayout = pool.MAX_PAYOUT_PER_EVENT();
         uint256 batchAmount = 0;
         uint256 processed = 0;
 
@@ -223,23 +226,20 @@ contract ClaimManager is AccessControl, ReentrancyGuardTransient {
             // Skip if already paid for this trigger (prevent double payout)
             if (triggerWorkerPaid[triggerId][agentId]) continue;
 
-            // Skip if coverage expired between trigger submission and payout execution
-            if (!pool.isActive(agentId)) continue;
 
             // Check per-event payout cap before executing
-            uint256 newTotal = trigger.totalPayouts + pool.DEFAULT_PAYOUT();
-            if (newTotal > pool.MAX_PAYOUT_PER_EVENT()) {
-                revert PayoutCapExceeded(triggerId, newTotal, pool.MAX_PAYOUT_PER_EVENT());
+            if (trigger.totalPayouts + payoutAmount > maxPayout) {
+                revert PayoutCapExceeded(triggerId, trigger.totalPayouts + payoutAmount, maxPayout);
             }
 
             // Mark as paid BEFORE external call (Checks-Effects-Interactions pattern)
             triggerWorkerPaid[triggerId][agentId] = true;
 
             // Execute payout via ProtectionPool -> USDC sent to worker's wallet
-            pool.executePayout(agentId, pool.DEFAULT_PAYOUT());
+            pool.executePayout(agentId, payoutAmount);
 
-            trigger.totalPayouts += pool.DEFAULT_PAYOUT();
-            batchAmount += pool.DEFAULT_PAYOUT();
+            trigger.totalPayouts += payoutAmount;
+            batchAmount += payoutAmount;
             processed++;
         }
 

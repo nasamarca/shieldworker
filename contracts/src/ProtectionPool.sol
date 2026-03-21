@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.34;
 
-import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
-import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
-import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {ShieldWorkerRegistry} from "./ShieldWorkerRegistry.sol";
-import {IIdentityRegistry} from "./interfaces/IIdentityRegistry.sol";
+import { AccessControl } from "@openzeppelin/contracts/access/AccessControl.sol";
+import { Pausable } from "@openzeppelin/contracts/utils/Pausable.sol";
+import { ReentrancyGuardTransient } from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import { ShieldWorkerRegistry } from "./ShieldWorkerRegistry.sol";
+import { IIdentityRegistry } from "./interfaces/IIdentityRegistry.sol";
 import "./interfaces/Errors.sol";
 
 /**
@@ -206,7 +206,6 @@ contract ProtectionPool is AccessControl, Pausable, ReentrancyGuardTransient {
      * @param amount The USDC payout amount (6 decimals)
      */
     function executePayout(uint256 agentId, uint256 amount) external nonReentrant onlyRole(CLAIM_MANAGER_ROLE) {
-        if (!isActive(agentId)) revert CoverageNotActive(agentId);
 
         uint256 poolBalance = usdc.balanceOf(address(this));
         if (poolBalance < amount) revert InsufficientPoolBalance(amount, poolBalance);
@@ -298,10 +297,14 @@ contract ProtectionPool is AccessControl, Pausable, ReentrancyGuardTransient {
         Coverage storage coverage = coverages[agentId];
 
         // Compute streak: consecutive contributions = portable credit signal
+        // Read current streak from registry (not from contributionCount, which never resets)
+        uint256 currentStreak = registry.getWorker(agentId).contributionStreak;
         uint256 newStreak;
         if (coverage.expiresAt > block.timestamp) {
-            newStreak = coverage.contributionCount + 1;
+            // Contributed before expiry → streak increments from current value
+            newStreak = currentStreak + 1;
         } else {
+            // Coverage had lapsed → streak resets to 1
             newStreak = 1;
         }
 
