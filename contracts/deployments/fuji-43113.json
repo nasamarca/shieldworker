@@ -1,0 +1,13 @@
+{
+  "chainId": 43113,
+  "claimManager": "0xFff8a77B1Dd38C7430578664aA274556D40f9975",
+  "deployer": "0xb6f2dBE7F3dD93B57aa762CC16aFdF71017B1991",
+  "explorer": "https://testnet.snowtrace.io",
+  "generatedBy": "script/Deploy.s.sol",
+  "identityRegistry": "0x8004A818BFB912233c491871b3d84c89A494BD9e",
+  "network": "avalanche-fuji",
+  "protectionPool": "0x6affa88497703f6c7E87AaeA0a65c19c771F1504",
+  "relayer": "0xf71031D28003c1d5acb051694347f392E782d5d2",
+  "shieldWorkerRegistry": "0x123090915d5a05c2d962e4Ed4d4916E20c22C20E",
+  "usdc": "0x5425890298aed601595a70AB815c96711a31Bc65"
+}

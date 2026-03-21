@@ -8,7 +8,8 @@ import {ClaimManager} from "../src/ClaimManager.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /// @title Deploy — ShieldWorker deployment script for Avalanche Fuji
-/// @notice Deploys 3 custom contracts and configures them with official Fuji addresses
+/// @notice Deploys 3 custom contracts and configures them with official Fuji addresses.
+///         Writes `deployments/fuji-<chainId>.json` via forge cheatcodes (do not edit by hand).
 contract Deploy is Script {
     // ══════════════════════════════════════════════════════════════════════
     //                    OFFICIAL FUJI ADDRESSES
@@ -81,6 +82,8 @@ contract Deploy is Script {
 
         vm.stopBroadcast();
 
+        _writeDeploymentJson(deployer, relayerWallet, registry, pool, claimManager);
+
         // ════════════════════════════════════════════════════════════════
         // Summary
         // ════════════════════════════════════════════════════════════════
@@ -94,5 +97,32 @@ contract Deploy is Script {
         console.log("ClaimManager:", address(claimManager));
         console.log("Relayer:", relayerWallet);
         console.log("==========================");
+    }
+
+    /// @notice Persist deployment addresses to `deployments/fuji-<chainId>.json` (overwrites).
+    /// @dev Each `vm.serialize*` call must use the same object key (`"deployment"`) so fields merge.
+    function _writeDeploymentJson(
+        address deployer,
+        address relayerWallet,
+        ShieldWorkerRegistry registry,
+        ProtectionPool pool,
+        ClaimManager claimManager
+    ) internal {
+        string memory json = "deployment";
+        json = vm.serializeString("deployment", "network", "avalanche-fuji");
+        json = vm.serializeUint("deployment", "chainId", uint256(block.chainid));
+        json = vm.serializeAddress("deployment", "deployer", deployer);
+        json = vm.serializeAddress("deployment", "relayer", relayerWallet);
+        json = vm.serializeString("deployment", "explorer", "https://testnet.snowtrace.io");
+        json = vm.serializeString("deployment", "generatedBy", "script/Deploy.s.sol");
+        json = vm.serializeAddress("deployment", "identityRegistry", IDENTITY_REGISTRY);
+        json = vm.serializeAddress("deployment", "usdc", FUJI_USDC);
+        json = vm.serializeAddress("deployment", "shieldWorkerRegistry", address(registry));
+        json = vm.serializeAddress("deployment", "protectionPool", address(pool));
+        json = vm.serializeAddress("deployment", "claimManager", address(claimManager));
+
+        string memory path = string.concat(vm.projectRoot(), "/deployments/fuji-", vm.toString(block.chainid), ".json");
+        vm.writeJson(json, path);
+        console.log("Deployment addresses written to:", path);
     }
 }
