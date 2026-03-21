@@ -17,7 +17,7 @@ import "./interfaces/Errors.sol";
  *           1. Admin/oracle submits a trigger event (e.g., "heavy_rain" in zone "flores")
  *           2. Contract queries ShieldWorkerRegistry for all workers in that zone
  *           3. Contract filters to only workers with active coverage (via ProtectionPool.isActive)
- *           4. Admin executes paginated batch payout — each affected worker receives $50 USDC
+ *           4. Admin executes paginated batch payout — each affected worker receives proportional USDC payout
  *
  *         Parametric model: Payouts are triggered by verifiable external events, not by
  *         individual claims. This eliminates paperwork, claims adjusters, and denial —
@@ -61,6 +61,8 @@ contract ClaimManager is AccessControl, ReentrancyGuardTransient {
         uint256 totalPayouts;
         uint256 workersAffected;
         uint256 workersProcessed;
+        uint256 nextOffset; // auto-tracked — admin cannot skip or repeat batches
+        uint256 payoutPerWorker; // computed at trigger time: proportional & fair
         bool fullyProcessed;
     }
 
@@ -97,7 +99,9 @@ contract ClaimManager is AccessControl, ReentrancyGuardTransient {
      * @param eventType The type of event (e.g., "heavy_rain")
      * @param affectedCount Number of workers with active coverage in the zone
      */
-    event TriggerSubmitted(uint256 indexed triggerId, string indexed zone, string eventType, uint256 affectedCount);
+    event TriggerSubmitted(
+        uint256 indexed triggerId, string indexed zone, string eventType, uint256 affectedCount, uint256 payoutPerWorker
+    );
 
     /**
      * @notice Emitted when a batch of payouts is executed for a trigger.
@@ -169,6 +173,18 @@ contract ClaimManager is AccessControl, ReentrancyGuardTransient {
             triggerToWorkers[triggerId].push(activeWorkers[i]);
         }
 
+        // Compute proportional payout: min(DEFAULT_PAYOUT, pool/workers, cap/workers)
+        // This ensures fairness — all affected workers get equal share, nobody is left out
+        uint256 computedPayout = 0;
+        if (activeCount > 0) {
+            uint256 defaultPayout = pool.DEFAULT_PAYOUT();
+            uint256 poolShare = pool.getPoolBalance() / activeCount;
+            uint256 capShare = pool.MAX_PAYOUT_PER_EVENT() / activeCount;
+            computedPayout = defaultPayout;
+            if (poolShare < computedPayout) computedPayout = poolShare;
+            if (capShare < computedPayout) computedPayout = capShare;
+        }
+
         // Create trigger event record
         triggers[triggerId] = TriggerEvent({
             eventType: eventType,
@@ -177,76 +193,59 @@ contract ClaimManager is AccessControl, ReentrancyGuardTransient {
             totalPayouts: 0,
             workersAffected: activeCount,
             workersProcessed: 0,
-            fullyProcessed: false
+            nextOffset: 0,
+            payoutPerWorker: computedPayout,
+            fullyProcessed: activeCount == 0
         });
 
-        emit TriggerSubmitted(triggerId, zone, eventType, activeCount);
+        emit TriggerSubmitted(triggerId, zone, eventType, activeCount, computedPayout);
     }
 
     /**
      * @notice Execute paginated batch payout for a trigger event.
+     *         Offset is auto-tracked — admin only needs to pass `limit` per call.
+     *         Payout per worker was computed proportionally at trigger time via
+     *         min(DEFAULT_PAYOUT, poolBalance/workers, cap/workers).
      *
-     *         Iterates through affected workers from offset to offset+limit, executing
-     *         $50 USDC payout per worker via ProtectionPool.executePayout().
-     *
-     *         Pagination prevents block gas limit issues. Recommended batch size: 20 workers.
-     *         Call multiple times with increasing offset to process all affected workers.
+     *         Known limitation (MVP): concurrent triggers may cause pool exhaustion
+     *         if total payoutPerWorker * workers across triggers exceeds pool balance.
+     *         Production: add pool reservation at trigger time or cross-trigger balance check.
      *
      * @param triggerId The trigger to process
-     * @param offset Start index in the affected workers array
-     * @param limit Maximum number of workers to process in this batch (recommended: 20)
+     * @param limit Max workers to process in this batch (recommended: 20)
      */
-    function executeBatchPayout(uint256 triggerId, uint256 offset, uint256 limit)
-        external
-        onlyRole(ORACLE_ROLE)
-        nonReentrant
-    {
+    function executeBatchPayout(uint256 triggerId, uint256 limit) external onlyRole(ORACLE_ROLE) nonReentrant {
         TriggerEvent storage trigger = triggers[triggerId];
 
-        // Verify trigger exists and is not fully processed
         if (trigger.timestamp == 0) revert TriggerNotFound(triggerId);
         if (trigger.fullyProcessed) revert TriggerAlreadyProcessed(triggerId);
 
         uint256[] storage affected = triggerToWorkers[triggerId];
-        if (offset >= affected.length) revert InvalidBatchRange(offset, affected.length);
+        uint256 offset = trigger.nextOffset;
 
-        // Calculate end index (capped at array length)
         uint256 end = offset + limit;
         if (end > affected.length) end = affected.length;
 
-        // Cache constants outside loop to avoid repeated external calls
-        uint256 payoutAmount = pool.DEFAULT_PAYOUT();
-        uint256 maxPayout = pool.MAX_PAYOUT_PER_EVENT();
+        uint256 payout = trigger.payoutPerWorker;
         uint256 batchAmount = 0;
         uint256 processed = 0;
 
         for (uint256 i = offset; i < end; i++) {
             uint256 agentId = affected[i];
-
-            // Skip if already paid for this trigger (prevent double payout)
             if (triggerWorkerPaid[triggerId][agentId]) continue;
 
-
-            // Check per-event payout cap before executing
-            if (trigger.totalPayouts + payoutAmount > maxPayout) {
-                revert PayoutCapExceeded(triggerId, trigger.totalPayouts + payoutAmount, maxPayout);
-            }
-
-            // Mark as paid BEFORE external call (Checks-Effects-Interactions pattern)
             triggerWorkerPaid[triggerId][agentId] = true;
+            pool.executePayout(agentId, payout);
 
-            // Execute payout via ProtectionPool -> USDC sent to worker's wallet
-            pool.executePayout(agentId, payoutAmount);
-
-            trigger.totalPayouts += payoutAmount;
-            batchAmount += payoutAmount;
+            trigger.totalPayouts += payout;
+            batchAmount += payout;
             processed++;
         }
 
+        trigger.nextOffset = end;
         trigger.workersProcessed += processed;
 
-        // Mark as fully processed if all workers have been handled
-        if (trigger.workersProcessed >= trigger.workersAffected) {
+        if (trigger.nextOffset >= affected.length) {
             trigger.fullyProcessed = true;
         }
 

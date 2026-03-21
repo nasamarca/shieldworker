@@ -274,7 +274,7 @@ contract IntegrationTest is Test {
         uint256 juanBefore = usdc.balanceOf(juan);
 
         vm.prank(deployer);
-        claimManager.executeBatchPayout(triggerId, 0, 20);
+        claimManager.executeBatchPayout(triggerId, 20);
 
         // Verify payouts
         assertEq(usdc.balanceOf(maria), mariaBefore + PAYOUT);
@@ -299,11 +299,11 @@ contract IntegrationTest is Test {
         // Submit trigger + payout
         vm.startPrank(deployer);
         uint256 triggerId = claimManager.submitTrigger("heavy_rain", "flores");
-        claimManager.executeBatchPayout(triggerId, 0, 20);
+        claimManager.executeBatchPayout(triggerId, 20);
 
         // Try to payout again → should revert (already fully processed)
         vm.expectRevert(abi.encodeWithSignature("TriggerAlreadyProcessed(uint256)", triggerId));
-        claimManager.executeBatchPayout(triggerId, 0, 20);
+        claimManager.executeBatchPayout(triggerId, 20);
         vm.stopPrank();
     }
 
@@ -324,25 +324,38 @@ contract IntegrationTest is Test {
         assertEq(trigger.workersAffected, 0); // No active workers
     }
 
-    function test_payout_cap_enforced() public {
-        // Register 11 workers in flores (11 * $50 = $550 > $500 cap)
-        address[11] memory workers;
+    function test_proportional_payout_when_cap_exceeded() public {
+        // Register 11 workers (11 * $50 = $550 > $500 cap)
+        // Pool = $500 seed + $11 contributions = $511
+        // Proportional: min($50, $511/11=$46.4, $500/11=$45.4) = $45 (cap/workers wins)
+        address[11] memory wkrs;
         for (uint256 i = 0; i < 11; i++) {
-            workers[i] = makeAddr(string(abi.encodePacked("worker", i)));
-            usdc.mint(workers[i], CONTRIBUTION);
-            _registerWorker(workers[i], "street_vendor", "flores");
-            uint256 agentId = registry.addressToAgentId(workers[i]);
-            _contributeFor(workers[i], agentId);
+            wkrs[i] = makeAddr(string(abi.encodePacked("worker", i)));
+            usdc.mint(wkrs[i], CONTRIBUTION);
+            _registerWorker(wkrs[i], "street_vendor", "flores");
+            uint256 agentId = registry.addressToAgentId(wkrs[i]);
+            _contributeFor(wkrs[i], agentId);
         }
 
-        // Submit trigger
         vm.prank(deployer);
         uint256 triggerId = claimManager.submitTrigger("heavy_rain", "flores");
 
-        // Execute payout — should revert when cap exceeded (11 * 50 = 550 > 500)
+        // Verify proportional payout was computed: $500 cap / 11 workers = $45.45 → $45 (floor)
+        ClaimManager.TriggerEvent memory trigger = claimManager.getTrigger(triggerId);
+        uint256 expectedPayout = pool.MAX_PAYOUT_PER_EVENT() / 11; // 500_000_000 / 11 = 45_454_545
+        assertEq(trigger.payoutPerWorker, expectedPayout);
+
+        // Execute — should NOT revert, all 11 workers get proportional share
+        uint256 balanceBefore = usdc.balanceOf(wkrs[0]);
         vm.prank(deployer);
-        vm.expectRevert(); // PayoutCapExceeded
-        claimManager.executeBatchPayout(triggerId, 0, 20);
+        claimManager.executeBatchPayout(triggerId, 20);
+
+        // Each worker gets proportional payout
+        assertEq(usdc.balanceOf(wkrs[0]), balanceBefore + expectedPayout);
+
+        trigger = claimManager.getTrigger(triggerId);
+        assertTrue(trigger.fullyProcessed);
+        assertEq(trigger.workersProcessed, 11);
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -386,6 +399,52 @@ contract IntegrationTest is Test {
         pool.contribute(agentId);
         vm.stopPrank();
         assertTrue(pool.isActive(agentId));
+    }
+
+    function test_register_agentId_zero_reverts() public {
+        vm.prank(maria);
+        vm.expectRevert("agentId must be > 0");
+        registry.registerWorker(0, "street_vendor", "flores", "uri");
+    }
+
+    function test_setProtectionPool_already_set_reverts() public {
+        // protectionPool already set in setUp()
+        vm.prank(deployer);
+        vm.expectRevert("Already set");
+        registry.setProtectionPool(makeAddr("newPool"));
+    }
+
+    function test_submitTrigger_pool_empty_payout_is_zero() public {
+        // Deploy fresh contracts with empty pool (no seed)
+        vm.startPrank(deployer);
+        ShieldWorkerRegistry freshRegistry = new ShieldWorkerRegistry(address(identityRegistry));
+        ProtectionPool freshPool = new ProtectionPool(address(usdc), address(freshRegistry), address(identityRegistry));
+        ClaimManager freshClaim = new ClaimManager(address(freshPool), address(freshRegistry));
+
+        freshRegistry.setProtectionPool(address(freshPool));
+        freshRegistry.setClaimManager(address(freshClaim));
+        freshPool.grantRole(freshPool.CLAIM_MANAGER_ROLE(), address(freshClaim));
+        freshPool.grantRole(freshPool.RELAYER_ROLE(), relayer);
+        freshClaim.grantRole(freshClaim.ORACLE_ROLE(), deployer);
+        vm.stopPrank();
+
+        // Register + contribute worker
+        vm.startPrank(maria);
+        uint256 agentId = identityRegistry.register("uri");
+        freshRegistry.registerWorker(agentId, "street_vendor", "flores", "uri");
+        usdc.approve(address(freshPool), CONTRIBUTION);
+        freshPool.contribute(agentId);
+        vm.stopPrank();
+
+        // Pool only has $1 (from contribution), no seed
+        assertEq(freshPool.getPoolBalance(), CONTRIBUTION);
+
+        // Submit trigger — payoutPerWorker = min($50, $1/1, $500/1) = $1
+        vm.prank(deployer);
+        uint256 triggerId = freshClaim.submitTrigger("heavy_rain", "flores");
+
+        ClaimManager.TriggerEvent memory trigger = freshClaim.getTrigger(triggerId);
+        assertEq(trigger.payoutPerWorker, CONTRIBUTION); // $1, not $50
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -632,39 +691,49 @@ contract IntegrationTest is Test {
         vm.prank(deployer);
         uint256 triggerId = claimManager.submitTrigger("heavy_rain", "flores");
 
-        // Process in batches of 2
+        // Process in batches of 2 — offset auto-tracked by contract
         vm.prank(deployer);
-        claimManager.executeBatchPayout(triggerId, 0, 2);
+        claimManager.executeBatchPayout(triggerId, 2);
 
         ClaimManager.TriggerEvent memory trigger = claimManager.getTrigger(triggerId);
         assertEq(trigger.workersProcessed, 2);
         assertFalse(trigger.fullyProcessed);
 
-        // Process next batch
+        // Next batch — contract knows to start at offset 2
         vm.prank(deployer);
-        claimManager.executeBatchPayout(triggerId, 2, 2);
+        claimManager.executeBatchPayout(triggerId, 2);
 
         trigger = claimManager.getTrigger(triggerId);
         assertEq(trigger.workersProcessed, 4);
         assertFalse(trigger.fullyProcessed);
 
-        // Process final batch
+        // Final batch — contract starts at offset 4, processes 1 remaining
         vm.prank(deployer);
-        claimManager.executeBatchPayout(triggerId, 4, 2);
+        claimManager.executeBatchPayout(triggerId, 2);
 
         trigger = claimManager.getTrigger(triggerId);
         assertEq(trigger.workersProcessed, 5);
         assertTrue(trigger.fullyProcessed);
-        assertEq(trigger.totalPayouts, PAYOUT * 5);
+    }
+
+    function test_submitTrigger_zero_workers_auto_completes() public {
+        // No workers registered in "palermo" — trigger should auto-complete
+        vm.prank(deployer);
+        uint256 triggerId = claimManager.submitTrigger("heavy_rain", "palermo");
+
+        ClaimManager.TriggerEvent memory trigger = claimManager.getTrigger(triggerId);
+        assertEq(trigger.workersAffected, 0);
+        assertTrue(trigger.fullyProcessed); // auto-completed, no need to call executeBatchPayout
+        assertEq(trigger.payoutPerWorker, 0);
     }
 
     function test_executeBatchPayout_trigger_not_found() public {
         vm.prank(deployer);
         vm.expectRevert(abi.encodeWithSignature("TriggerNotFound(uint256)", 999));
-        claimManager.executeBatchPayout(999, 0, 20);
+        claimManager.executeBatchPayout(999, 20);
     }
 
-    function test_executeBatchPayout_invalid_offset() public {
+    function test_executeBatchPayout_auto_offset_prevents_re_execution() public {
         _registerWorker(maria, "street_vendor", "flores");
         uint256 agentId = registry.addressToAgentId(maria);
         _contributeFor(maria, agentId);
@@ -672,10 +741,14 @@ contract IntegrationTest is Test {
         vm.prank(deployer);
         uint256 triggerId = claimManager.submitTrigger("heavy_rain", "flores");
 
-        // Offset beyond affected workers array length
+        // First call processes all workers
         vm.prank(deployer);
-        vm.expectRevert(abi.encodeWithSignature("InvalidBatchRange(uint256,uint256)", 50, 1));
-        claimManager.executeBatchPayout(triggerId, 50, 20);
+        claimManager.executeBatchPayout(triggerId, 20);
+
+        // Second call reverts — trigger fully processed, offset auto-tracked
+        vm.prank(deployer);
+        vm.expectRevert(abi.encodeWithSignature("TriggerAlreadyProcessed(uint256)", triggerId));
+        claimManager.executeBatchPayout(triggerId, 20);
     }
 
     function test_executeBatchPayout_only_oracle_role() public {
@@ -689,7 +762,7 @@ contract IntegrationTest is Test {
         // Non-oracle tries to execute payout
         vm.prank(maria);
         vm.expectRevert();
-        claimManager.executeBatchPayout(triggerId, 0, 20);
+        claimManager.executeBatchPayout(triggerId, 20);
     }
 
     function test_executeBatchPayout_pays_even_after_coverage_expires() public {
@@ -721,7 +794,7 @@ contract IntegrationTest is Test {
         uint256 juanBefore = usdc.balanceOf(juan);
 
         vm.prank(deployer);
-        claimManager.executeBatchPayout(triggerId, 0, 20);
+        claimManager.executeBatchPayout(triggerId, 20);
 
         // Both workers should receive payout despite expired coverage
         assertEq(usdc.balanceOf(maria), mariaBefore + PAYOUT);

@@ -33,10 +33,6 @@ error WorkerNotRegistered(uint256 agentId);
 // ║                      ProtectionPool Errors                          ║
 // ╚══════════════════════════════════════════════════════════════════════╝
 
-/// @notice Thrown when a payout is attempted for a worker without active coverage
-/// @param agentId The worker's agentId whose coverage has expired or never existed
-error CoverageNotActive(uint256 agentId);
-
 /// @notice Thrown when the pool does not have enough USDC to cover a payout
 /// @param required The amount of USDC needed
 /// @param available The actual USDC balance in the pool
@@ -53,22 +49,6 @@ error TriggerAlreadyProcessed(uint256 triggerId);
 /// @notice Thrown when referencing a trigger that does not exist
 /// @param triggerId The invalid trigger ID
 error TriggerNotFound(uint256 triggerId);
-
-/// @notice Thrown when trying to pay a worker who has already been paid for this trigger
-/// @param triggerId The trigger ID
-/// @param agentId The worker's agentId that was already paid
-error WorkerAlreadyPaid(uint256 triggerId, uint256 agentId);
-
-/// @notice Thrown when a batch payout would exceed the per-event payout cap (MAX_PAYOUT_PER_EVENT)
-/// @param triggerId The trigger ID
-/// @param total The cumulative payout amount that would exceed the cap
-/// @param cap The maximum allowed payout per event
-error PayoutCapExceeded(uint256 triggerId, uint256 total, uint256 cap);
-
-/// @notice Thrown when the batch offset is out of range for the affected workers array
-/// @param offset The requested start index
-/// @param total The total number of affected workers
-error InvalidBatchRange(uint256 offset, uint256 total);
 
 // ╔══════════════════════════════════════════════════════════════════════╗
 // ║                         General Errors                              ║
