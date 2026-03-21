@@ -1,7 +1,9 @@
 "use client";
 
-import { useSendTransaction, useActiveAccount } from "thirdweb/react";
+import { useState, useCallback } from "react";
+import { useSendTransaction, useActiveAccount, useActiveWallet } from "thirdweb/react";
 import { prepareContractCall, type ThirdwebClient } from "thirdweb";
+import { wrapFetchWithPayment } from "thirdweb/x402";
 import { getShieldContracts } from "./useShieldWorker";
 import { DEFAULT_CONTRIBUTION } from "@/lib/constants";
 
@@ -80,6 +82,52 @@ export function useContribute(client: ThirdwebClient) {
   };
 
   return { contribute, isPending, error };
+}
+
+// ── Contribute via x402 (HTTP 402 payment protocol) ─────────────────
+
+export function useContributeX402(client: ThirdwebClient) {
+  const wallet = useActiveWallet();
+  const [isPending, setIsPending] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  const contributeX402 = useCallback(
+    async (agentId: bigint): Promise<{ success: boolean; txHash?: string }> => {
+      if (!wallet) throw new Error("Wallet not connected");
+      setIsPending(true);
+      setError(null);
+
+      try {
+        const fetchWithPay = wrapFetchWithPayment(
+          globalThis.fetch,
+          client,
+          wallet,
+          { maxValue: 2_000_000n }, // max 2 USDC safety cap
+        );
+
+        const res = await fetchWithPay(
+          `/api/contribute?agentId=${agentId.toString()}`
+        );
+
+        const data = await res.json();
+
+        if (!res.ok || !data.success) {
+          throw new Error(data.error ?? `x402 contribute failed (${res.status})`);
+        }
+
+        return { success: true, txHash: data.txHash };
+      } catch (e) {
+        const err = e instanceof Error ? e : new Error("Unknown x402 error");
+        setError(err);
+        throw err;
+      } finally {
+        setIsPending(false);
+      }
+    },
+    [client, wallet]
+  );
+
+  return { contributeX402, isPending, error };
 }
 
 // ── Submit Trigger (admin/oracle) ───────────────────────────────────

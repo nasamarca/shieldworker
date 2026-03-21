@@ -18,3 +18,11 @@ export function formatDate(timestamp: bigint): string {
 export function truncateAddress(address: string): string {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
+
+export function snowtraceLink(txHash: string): string {
+  return `https://testnet.snowtrace.io/tx/${txHash}`;
+}
+
+export function snowtraceAddressLink(address: string): string {
+  return `https://testnet.snowtrace.io/address/${address}`;
+}
