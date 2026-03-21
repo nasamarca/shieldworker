@@ -55,7 +55,7 @@ export default function DashboardPage() {
       <Card className="mb-6">
         <CardContent className="pt-6">
           <div className="flex items-center gap-4 mb-6">
-            <div className={`w-16 h-16 rounded-full flex items-center justify-center text-3xl ${isActive ? "bg-green-100" : "bg-gray-100"}`}>
+            <div className={`w-16 h-16 rounded-full flex items-center justify-center text-3xl ${isActive ? "bg-blue-100" : "bg-gray-100"}`}>
               {isActive ? "🛡️" : "⚪"}
             </div>
             <div>

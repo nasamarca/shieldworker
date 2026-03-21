@@ -3,8 +3,6 @@ import { useReadContract, useActiveAccount } from "thirdweb/react";
 import {
   readContract,
   getContract,
-  getContractEvents,
-  prepareEvent,
   type ThirdwebClient,
 } from "thirdweb";
 import { avalancheFuji } from "thirdweb/chains";
@@ -46,7 +44,6 @@ export function getShieldContracts(client: ThirdwebClient) {
   };
 }
 
-// S4: Memoize contract instances to prevent unnecessary re-renders
 function useShieldContracts(client: ThirdwebClient) {
   return useMemo(() => getShieldContracts(client), [client]);
 }
@@ -178,7 +175,7 @@ export function useTriggers(client: ThirdwebClient) {
   return { triggerCount: triggerCount ?? 0n, refetchCount };
 }
 
-// ── Trigger list: fetch all triggers ─────────────────────────────────
+// ── Trigger list ────────────────────────────────────────────────────
 
 export interface TriggerData {
   id: bigint;
@@ -193,7 +190,6 @@ export interface TriggerData {
   fullyProcessed: boolean;
 }
 
-// S3: Parallel RPC calls with Promise.all instead of sequential loop
 export function useTriggerList(client: ThirdwebClient) {
   const contracts = useShieldContracts(client);
   const { triggerCount, refetchCount } = useTriggers(client);
@@ -220,7 +216,6 @@ export function useTriggerList(client: ThirdwebClient) {
           }).then((data) => ({ id: BigInt(i), ...data }))
         )
       );
-      // Reverse: newest first
       setTriggers(results.reverse());
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load triggers");
@@ -244,7 +239,7 @@ export function useTriggerList(client: ThirdwebClient) {
   };
 }
 
-// ── Affected workers for a trigger ──────────────────────────────────
+// ── Affected workers ────────────────────────────────────────────────
 
 export function useAffectedWorkers(client: ThirdwebClient, triggerId: bigint | null) {
   const contracts = useShieldContracts(client);
@@ -270,7 +265,7 @@ export function useAffectedWorkers(client: ThirdwebClient, triggerId: bigint | n
   return workers;
 }
 
-// ── Event history: contributions + payouts ──────────────────────────
+// ── Event history via public Fuji RPC (bypasses thirdweb rate limits) ──
 
 export interface ContributionEvent {
   agentId: bigint;
@@ -290,59 +285,57 @@ export interface PayoutEvent {
   blockNumber: bigint;
 }
 
-// Fuji RPC typically supports 2k–10k block range for eth_getLogs.
-const EVENT_BLOCK_CHUNK = 2048n;
+// Public Avalanche Fuji RPC — no rate limit, max 2048 blocks per eth_getLogs
+const FUJI_PUBLIC_RPC = "https://api.avax-test.network/ext/bc/C/rpc";
 
-// S1: Safe bigint comparison — coerce both sides to BigInt
-function safeBigIntEq(a: unknown, b: bigint): boolean {
-  try {
-    return BigInt(a as any) === b;
-  } catch {
-    return false;
-  }
+// Pre-computed event topic0 signatures
+const TOPICS = {
+  ContributionReceived: "0xf0d39bba72b097aac68d326a113c14384101f3ccf433a038c5d3aead41befed3",
+  PayoutExecuted: "0xbeaa99d72a600712e4656a7da04b2cabe31fb50fbf8f5b5f96513b0a4f495c1a",
+};
+
+async function fujiRpc(method: string, params: any[]): Promise<any> {
+  const res = await fetch(FUJI_PUBLIC_RPC, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+  });
+  const json = await res.json();
+  if (json.error) throw new Error(json.error.message);
+  return json.result;
 }
 
-async function fetchEventsPaginated<T>(
-  contract: ReturnType<typeof getContract>,
-  event: ReturnType<typeof prepareEvent>,
-  filterFn: (log: any) => boolean,
-  mapFn: (log: any) => T,
-): Promise<{ data: T[]; error: string | null }> {
-  let lastError: string | null = null;
+async function fetchPoolEvents(topic: string): Promise<any[]> {
+  const latestHex = await fujiRpc("eth_blockNumber", []);
+  const latest = BigInt(latestHex);
+  const from = latest - 2000n;
 
-  // Try with thirdweb's indexer first (useIndexer: true is default)
-  try {
-    const logs = await getContractEvents({
-      contract,
-      events: [event],
-      blockRange: 10000n,
-    });
-    const filtered = logs.filter(filterFn).map(mapFn).reverse();
-    return { data: filtered, error: null };
-  } catch (e) {
-    lastError = e instanceof Error ? e.message : "Indexer fetch failed";
-  }
+  const logs = await fujiRpc("eth_getLogs", [
+    {
+      address: addresses.protectionPool,
+      topics: [topic],
+      fromBlock: "0x" + from.toString(16),
+      toBlock: "0x" + latest.toString(16),
+    },
+  ]);
 
-  // Paginated fallback: fetch in smaller chunk via direct RPC
-  try {
-    const logs = await getContractEvents({
-      contract,
-      events: [event],
-      blockRange: EVENT_BLOCK_CHUNK,
-      useIndexer: false,
-    });
-    const filtered = logs.filter(filterFn).map(mapFn).reverse();
-    return { data: filtered, error: null };
-  } catch (e) {
-    lastError = e instanceof Error ? e.message : "RPC fetch failed";
-  }
-
-  // All attempts failed — return error so UI can warn user
-  return { data: [], error: lastError };
+  return logs ?? [];
 }
 
-export function useContributionHistory(client: ThirdwebClient, agentId: bigint) {
-  const contracts = useShieldContracts(client);
+function hexToAddress(topic: string): string {
+  return "0x" + topic.slice(26);
+}
+
+function decodeUint256s(data: string): bigint[] {
+  const hex = data.slice(2);
+  const values: bigint[] = [];
+  for (let i = 0; i < hex.length; i += 64) {
+    values.push(BigInt("0x" + hex.slice(i, i + 64)));
+  }
+  return values;
+}
+
+export function useContributionHistory(_client: ThirdwebClient, agentId: bigint) {
   const [events, setEvents] = useState<ContributionEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -352,31 +345,33 @@ export function useContributionHistory(client: ThirdwebClient, agentId: bigint) 
     setLoading(true);
     setError(null);
 
-    const contributionEvent = prepareEvent({
-      signature:
-        "event ContributionReceived(uint256 indexed agentId, address indexed payer, uint256 amount, uint256 newExpiresAt, uint256 streak)",
-    });
+    try {
+      // ContributionReceived(uint256 indexed agentId, address indexed payer, uint256 amount, uint256 newExpiresAt, uint256 streak)
+      const logs = await fetchPoolEvents(TOPICS.ContributionReceived);
 
-    const result = await fetchEventsPaginated<ContributionEvent>(
-      contracts.pool,
-      contributionEvent,
-      // S1: safe bigint comparison
-      (log: any) => safeBigIntEq(log.args.agentId, agentId),
-      (log: any) => ({
-        agentId: BigInt(log.args.agentId),
-        payer: log.args.payer,
-        amount: BigInt(log.args.amount),
-        newExpiresAt: BigInt(log.args.newExpiresAt),
-        streak: BigInt(log.args.streak),
-        transactionHash: log.transactionHash,
-        blockNumber: BigInt(log.blockNumber),
-      }),
-    );
+      const mapped: ContributionEvent[] = logs
+        .filter((log: any) => BigInt(log.topics[1]) === agentId)
+        .map((log: any) => {
+          const data = decodeUint256s(log.data);
+          return {
+            agentId: BigInt(log.topics[1]),
+            payer: hexToAddress(log.topics[2]),
+            amount: data[0] ?? 0n,
+            newExpiresAt: data[1] ?? 0n,
+            streak: data[2] ?? 0n,
+            transactionHash: log.transactionHash,
+            blockNumber: BigInt(log.blockNumber),
+          };
+        })
+        .reverse();
 
-    setEvents(result.data);
-    setError(result.error);
-    setLoading(false);
-  }, [agentId, contracts.pool]);
+      setEvents(mapped);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to fetch events");
+    } finally {
+      setLoading(false);
+    }
+  }, [agentId]);
 
   useEffect(() => {
     fetchEvents();
@@ -385,8 +380,7 @@ export function useContributionHistory(client: ThirdwebClient, agentId: bigint) 
   return { events, loading, error, refetch: fetchEvents };
 }
 
-export function usePayoutHistory(client: ThirdwebClient, agentId: bigint) {
-  const contracts = useShieldContracts(client);
+export function usePayoutHistory(_client: ThirdwebClient, agentId: bigint) {
   const [events, setEvents] = useState<PayoutEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -396,29 +390,31 @@ export function usePayoutHistory(client: ThirdwebClient, agentId: bigint) {
     setLoading(true);
     setError(null);
 
-    const payoutEvent = prepareEvent({
-      signature:
-        "event PayoutExecuted(uint256 indexed agentId, address indexed recipient, uint256 amount)",
-    });
+    try {
+      // PayoutExecuted(uint256 indexed agentId, address indexed recipient, uint256 amount)
+      const logs = await fetchPoolEvents(TOPICS.PayoutExecuted);
 
-    const result = await fetchEventsPaginated<PayoutEvent>(
-      contracts.pool,
-      payoutEvent,
-      // S1: safe bigint comparison
-      (log: any) => safeBigIntEq(log.args.agentId, agentId),
-      (log: any) => ({
-        agentId: BigInt(log.args.agentId),
-        recipient: log.args.recipient,
-        amount: BigInt(log.args.amount),
-        transactionHash: log.transactionHash,
-        blockNumber: BigInt(log.blockNumber),
-      }),
-    );
+      const mapped: PayoutEvent[] = logs
+        .filter((log: any) => BigInt(log.topics[1]) === agentId)
+        .map((log: any) => {
+          const data = decodeUint256s(log.data);
+          return {
+            agentId: BigInt(log.topics[1]),
+            recipient: hexToAddress(log.topics[2]),
+            amount: data[0] ?? 0n,
+            transactionHash: log.transactionHash,
+            blockNumber: BigInt(log.blockNumber),
+          };
+        })
+        .reverse();
 
-    setEvents(result.data);
-    setError(result.error);
-    setLoading(false);
-  }, [agentId, contracts.pool]);
+      setEvents(mapped);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to fetch events");
+    } finally {
+      setLoading(false);
+    }
+  }, [agentId]);
 
   useEffect(() => {
     fetchEvents();
