@@ -31,10 +31,10 @@ export default function Home() {
   return (
     <div className="max-w-6xl mx-auto px-4 py-16">
       <HeroSection />
-      <LiveStats stats={stats} />
-      <HowItWorks />
       <ProblemSection />
       <RealImpact />
+      <HowItWorks />
+      <LiveStats stats={stats} />
       <TechStack />
       <Architecture />
       <ContractDeployments />
