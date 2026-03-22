@@ -26,6 +26,7 @@ export default function RootLayout({
     <html lang="en" className={`${inter.className} h-full antialiased`}>
       <body className="min-h-full flex flex-col bg-white text-gray-900">
         <Providers>
+          <div className="page-gradient" aria-hidden="true" />
           <Navbar />
           <main className="flex-1">{children}</main>
           <Toaster position="top-right" richColors />
