@@ -10,6 +10,8 @@ import {
   ProblemSection,
   RealImpact,
   TechStack,
+  Architecture,
+  ContractDeployments,
   Roadmap,
   Compliance,
   CtaSection,
@@ -34,6 +36,8 @@ export default function Home() {
       <ProblemSection />
       <RealImpact />
       <TechStack />
+      <Architecture />
+      <ContractDeployments />
       <Roadmap />
       <Compliance />
       <CtaSection />

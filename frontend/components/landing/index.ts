@@ -4,6 +4,8 @@ export { HowItWorks } from "./HowItWorks";
 export { ProblemSection } from "./ProblemSection";
 export { RealImpact } from "./RealImpact";
 export { TechStack } from "./TechStack";
+export { Architecture } from "./Architecture";
+export { ContractDeployments } from "./ContractDeployments";
 export { Roadmap } from "./Roadmap";
 export { Compliance } from "./Compliance";
 export { CtaSection } from "./CtaSection";
