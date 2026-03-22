@@ -6,50 +6,49 @@ import { ConnectButton } from "thirdweb/react";
 import { avalancheFuji } from "thirdweb/chains";
 import { client } from "@/lib/thirdweb";
 import { useWorkerByAddress, useIsAdmin } from "@/hooks/useShieldWorker";
-import { Badge } from "@/components/ui/badge";
 
 export function Navbar() {
   const { isRegistered } = useWorkerByAddress(client);
   const isAdmin = useIsAdmin(client);
 
   return (
-    <nav className="glass-nav sticky top-0 z-50 shadow-sm">
+    <nav className="glass-nav sticky top-0 z-50">
       <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
-        <div className="flex items-center gap-6">
-          <Link href="/" className="flex items-center gap-2 font-bold text-lg">
+        <div className="flex items-center gap-8">
+          <Link href="/" className="flex items-center gap-2.5 font-bold text-base">
             <Image
               src="/shield-logo.png"
               alt="ShieldWorker"
-              width={32}
-              height={32}
-              className="h-8 w-8 object-contain shrink-0 rounded-md"
+              width={28}
+              height={28}
+              className="h-7 w-7 object-contain shrink-0 rounded-md"
               priority
               unoptimized
             />
-            <span>ShieldWorker</span>
+            <span className="tracking-tight">ShieldWorker</span>
           </Link>
 
-          <div className="hidden sm:flex items-center gap-4 text-sm">
+          <div className="hidden sm:flex items-center gap-6 text-sm text-gray-500">
             {isRegistered && (
               <>
-                <Link href="/contribute" className="hover:text-blue-600 transition-colors">
+                <Link href="/contribute" className="hover:text-gray-900 transition-colors">
                   Contribute
                 </Link>
-                <Link href="/dashboard" className="hover:text-blue-600 transition-colors">
+                <Link href="/dashboard" className="hover:text-gray-900 transition-colors">
                   Dashboard
                 </Link>
               </>
             )}
             {!isRegistered && (
-              <Link href="/register" className="hover:text-blue-600 transition-colors">
+              <Link href="/register" className="hover:text-gray-900 transition-colors">
                 Register
               </Link>
             )}
             {isAdmin && (
-              <Link href="/admin" className="hover:text-blue-600 transition-colors">
-                <Badge variant="outline" className="text-xs">
+              <Link href="/admin" className="hover:text-gray-900 transition-colors">
+                <span className="px-2.5 py-1 rounded-full border border-gray-200 text-xs font-medium text-gray-600 hover:border-gray-400 transition-colors">
                   Admin
-                </Badge>
+                </span>
               </Link>
             )}
           </div>

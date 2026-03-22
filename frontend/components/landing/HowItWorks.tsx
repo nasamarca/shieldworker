@@ -1,28 +1,30 @@
-import { Card, CardContent } from "@/components/ui/card";
-
 const STEPS = [
-  { step: "1", title: "Register / Registrarse", desc: "Get your on-chain identity via ERC-8004. You own your agentId NFT.", color: "from-blue-500 to-blue-600" },
-  { step: "2", title: "Contribute / Contribuir", desc: "Pay $1/week to the community fund. Coverage activates for 7 days.", color: "from-emerald-500 to-emerald-600" },
-  { step: "3", title: "Trigger Event", desc: "Weather event verified in your zone (e.g., heavy rain in Flores).", color: "from-amber-500 to-orange-500" },
-  { step: "4", title: "Auto Payout", desc: "Receive proportional USDC payout instantly. Zero paperwork.", color: "from-violet-500 to-purple-600" },
+  { step: "01", title: "Register", subtitle: "Registrarse", desc: "Get your on-chain identity via ERC-8004. You own your agentId NFT — portable, self-sovereign." },
+  { step: "02", title: "Contribute", subtitle: "Contribuir", desc: "Pay $1/week to the community fund. Your coverage activates instantly for 7 days." },
+  { step: "03", title: "Trigger", subtitle: "Evento", desc: "A weather event is verified in your zone — heavy rain, flood, or heatwave." },
+  { step: "04", title: "Payout", subtitle: "Pago automático", desc: "Receive proportional USDC payout instantly. Zero paperwork, zero delays." },
 ];
 
 export function HowItWorks() {
   return (
-    <section className="mb-20 animate-fade-up" style={{ animationDelay: "0.3s" }}>
-      <h2 className="text-2xl font-bold text-center mb-2">How It Works</h2>
-      <p className="text-center text-gray-400 text-sm mb-10">4 steps to community protection</p>
-      <div className="grid md:grid-cols-4 gap-6 stagger">
+    <section className="pb-24 animate-fade-up" style={{ animationDelay: "0.2s" }}>
+      <div className="section-divider mb-16" />
+      <p className="text-sm font-medium tracking-widest uppercase text-gray-400 text-center mb-4">
+        How It Works
+      </p>
+      <h2 className="text-3xl sm:text-4xl font-extrabold text-center mb-16">
+        Four steps to protection
+      </h2>
+      <div className="grid md:grid-cols-4 gap-8 stagger">
         {STEPS.map((item) => (
-          <Card key={item.step} className="glass-card hover-lift text-center rounded-2xl border-0 animate-fade-up overflow-hidden">
-            <CardContent className="pt-8 pb-6">
-              <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${item.color} text-white font-bold text-lg flex items-center justify-center mx-auto mb-4 shadow-lg`}>
-                {item.step}
-              </div>
-              <h3 className="font-semibold mb-2 text-gray-800">{item.title}</h3>
-              <p className="text-sm text-gray-500 leading-relaxed">{item.desc}</p>
-            </CardContent>
-          </Card>
+          <div key={item.step} className="group">
+            <p className="text-5xl font-extrabold text-gray-100 group-hover:text-blue-100 transition-colors mb-4">
+              {item.step}
+            </p>
+            <h3 className="text-lg font-bold text-gray-900 mb-0.5">{item.title}</h3>
+            <p className="text-sm text-blue-600 mb-3">{item.subtitle}</p>
+            <p className="text-sm text-gray-500 leading-relaxed">{item.desc}</p>
+          </div>
         ))}
       </div>
     </section>

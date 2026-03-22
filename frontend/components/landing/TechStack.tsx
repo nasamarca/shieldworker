@@ -1,26 +1,29 @@
-import { Card, CardContent } from "@/components/ui/card";
-
 const TECH = [
-  { name: "ERC-8004", desc: "Self-sovereign worker identity NFT", icon: "🪪" },
-  { name: "x402 Protocol", desc: "HTTP-native micro-payments", icon: "💳" },
-  { name: "Avalanche C-Chain", desc: "Sub-second finality, low gas", icon: "🔺" },
-  { name: "USDC", desc: "Stable payouts in real currency", icon: "💵" },
+  { name: "ERC-8004", desc: "Self-sovereign worker identity NFT — portable across protocols", icon: "🪪" },
+  { name: "x402 Protocol", desc: "HTTP-native micro-payments — gasless for workers", icon: "💳" },
+  { name: "Avalanche C-Chain", desc: "Sub-second finality, minimal gas costs", icon: "🔺" },
+  { name: "USDC", desc: "Stable payouts denominated in real currency", icon: "💵" },
 ];
 
 export function TechStack() {
   return (
-    <section className="mb-20 animate-fade-up" style={{ animationDelay: "0.45s" }}>
-      <h2 className="text-2xl font-bold text-center mb-2">Built With</h2>
-      <p className="text-center text-gray-400 text-sm mb-10">Avalanche-native technology stack</p>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 stagger">
+    <section className="pb-24 animate-fade-up" style={{ animationDelay: "0.35s" }}>
+      <div className="section-divider mb-16" />
+      <p className="text-sm font-medium tracking-widest uppercase text-gray-400 text-center mb-4">
+        Technology
+      </p>
+      <h2 className="text-3xl sm:text-4xl font-extrabold text-center mb-16">
+        Built on Avalanche
+      </h2>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-8 stagger">
         {TECH.map((tech) => (
-          <Card key={tech.name} className="glass-card rounded-2xl border-0 hover-lift animate-fade-up text-center">
-            <CardContent className="pt-6 pb-5">
-              <span className="text-2xl block mb-2">{tech.icon}</span>
-              <p className="font-semibold text-sm text-gray-800">{tech.name}</p>
-              <p className="text-xs text-gray-500 mt-1">{tech.desc}</p>
-            </CardContent>
-          </Card>
+          <div key={tech.name} className="text-center group">
+            <div className="w-14 h-14 rounded-2xl bg-gray-50 group-hover:bg-blue-50 flex items-center justify-center text-2xl mx-auto mb-4 transition-colors">
+              {tech.icon}
+            </div>
+            <p className="font-bold text-sm text-gray-900 mb-1">{tech.name}</p>
+            <p className="text-xs text-gray-500 leading-relaxed">{tech.desc}</p>
+          </div>
         ))}
       </div>
     </section>

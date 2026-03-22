@@ -9,29 +9,23 @@ import { useWorkerByAddress } from "@/hooks/useShieldWorker";
 import { useRegisterIdentity, useRegisterWorker } from "@/hooks/useShieldActions";
 import { WORKER_TYPES, ZONES } from "@/lib/constants";
 import { snowtraceLink } from "@/lib/format";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 
 // ERC-721 Transfer event topic0
 const TRANSFER_TOPIC =
   "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
-// address(0) padded to 32 bytes — mint events have from == address(0)
 const ZERO_ADDRESS_TOPIC =
   "0x0000000000000000000000000000000000000000000000000000000000000000";
 
 function parseAgentIdFromReceipt(receipt: any): bigint | null {
   if (!receipt?.logs) return null;
   for (const log of receipt.logs) {
-    // ERC-721 Transfer(address indexed from, address indexed to, uint256 indexed tokenId)
-    // Only match mint: from must be address(0)
     if (
       log.topics?.[0]?.toLowerCase() === TRANSFER_TOPIC &&
       log.topics?.length >= 4 &&
       log.topics[1] === ZERO_ADDRESS_TOPIC
     ) {
-      // topics[3] is the tokenId (agentId) — indexed uint256
       return BigInt(log.topics[3]);
     }
   }
@@ -52,19 +46,25 @@ export default function RegisterPage() {
 
   if (!account) {
     return (
-      <div className="max-w-lg mx-auto px-4 py-16 text-center">
-        <h1 className="text-2xl font-bold mb-4">Connect Wallet First</h1>
-        <p className="text-gray-500">Use the Connect Wallet button in the navbar to get started.</p>
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-3xl font-extrabold mb-3">Connect Wallet</h1>
+          <p className="text-gray-400">Use the Connect Wallet button in the navbar to get started.</p>
+        </div>
       </div>
     );
   }
 
   if (isRegistered) {
     return (
-      <div className="max-w-lg mx-auto px-4 py-16 text-center">
-        <h1 className="text-2xl font-bold mb-4">Already Registered!</h1>
-        <p className="text-gray-500 mb-4">You already have a ShieldWorker identity.</p>
-        <Button onClick={() => router.push("/dashboard")}>Go to Dashboard</Button>
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-3xl font-extrabold mb-3">Already Registered</h1>
+          <p className="text-gray-400 mb-6">You already have a ShieldWorker identity.</p>
+          <Button onClick={() => router.push("/dashboard")} className="h-11 px-8 rounded-full bg-gray-900 hover:bg-gray-800 text-white text-sm">
+            Go to Dashboard
+          </Button>
+        </div>
       </div>
     );
   }
@@ -73,37 +73,22 @@ export default function RegisterPage() {
     try {
       const metadataURI = `https://shieldworker.xyz/metadata/${account.address}.json`;
       const txResult = await registerIdentity(metadataURI);
-
-      // sendTransaction only returns { transactionHash } — we need logs
-      // waitForReceipt returns the full receipt with logs
       const receipt = await waitForReceipt(txResult);
-
-      // Parse agentId from ERC-721 Transfer event in tx receipt
       const mintedAgentId = parseAgentIdFromReceipt(receipt);
 
       if (mintedAgentId && mintedAgentId > 0n) {
         setAgentId(mintedAgentId);
-        toast.success(`Step 1 complete! AgentId #${mintedAgentId} minted.`, {
+        toast.success(`AgentId #${mintedAgentId} minted successfully.`, {
           action: receipt?.transactionHash
-            ? {
-                label: "View on Snowtrace",
-                onClick: () => window.open(snowtraceLink(receipt.transactionHash), "_blank"),
-              }
+            ? { label: "View on Snowtrace", onClick: () => window.open(snowtraceLink(receipt.transactionHash), "_blank") }
             : undefined,
         });
       } else {
-        // Fallback: let user enter manually
-        toast.info(
-          "Identity minted! Please enter your agentId number manually (check wallet or Snowtrace).",
-          {
-            action: receipt?.transactionHash
-              ? {
-                  label: "View TX",
-                  onClick: () => window.open(snowtraceLink(receipt.transactionHash), "_blank"),
-                }
-              : undefined,
-          }
-        );
+        toast.info("Identity minted! Enter your agentId manually.", {
+          action: receipt?.transactionHash
+            ? { label: "View TX", onClick: () => window.open(snowtraceLink(receipt.transactionHash), "_blank") }
+            : undefined,
+        });
       }
       setStep(2);
     } catch (e: unknown) {
@@ -121,12 +106,8 @@ export default function RegisterPage() {
       const metadataURI = `https://shieldworker.xyz/metadata/${account.address}.json`;
       const receipt = await registerWorker(agentId, workerType, zone, metadataURI);
       toast.success("Registration complete! Welcome to ShieldWorker.", {
-        description: "Registro completado — bienvenido",
         action: receipt?.transactionHash
-          ? {
-              label: "View on Snowtrace",
-              onClick: () => window.open(snowtraceLink(receipt.transactionHash), "_blank"),
-            }
+          ? { label: "View on Snowtrace", onClick: () => window.open(snowtraceLink(receipt.transactionHash), "_blank") }
           : undefined,
       });
       router.push("/dashboard");
@@ -136,67 +117,71 @@ export default function RegisterPage() {
     }
   };
 
-  return (
-    <div className="max-w-lg mx-auto px-4 py-16 animate-fade-up">
-      <h1 className="text-3xl font-bold mb-2">Register as Worker</h1>
-      <p className="text-gray-500 mb-8">Registrarse como trabajador</p>
+  const inputClass = "w-full border border-gray-200 rounded-xl px-4 py-3 text-sm bg-gray-50/50 focus:bg-white focus:ring-2 focus:ring-gray-900/10 focus:border-gray-300 transition-all outline-none";
 
-      <div className="flex items-center gap-2 mb-8">
-        <Badge variant={step >= 1 ? "default" : "outline"} className="transition-all">Step 1: Mint Identity</Badge>
-        <div className={`h-px flex-1 transition-colors ${step >= 2 ? "bg-blue-400" : "bg-gray-200"}`} />
-        <Badge variant={step >= 2 ? "default" : "outline"} className="transition-all">Step 2: Link to ShieldWorker</Badge>
+  return (
+    <div className="max-w-md mx-auto px-4 py-20 animate-fade-up">
+      <p className="text-sm font-medium tracking-widest uppercase text-gray-400 mb-3">Registration</p>
+      <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight mb-2">Create your identity</h1>
+      <p className="text-gray-500 mb-10">Registrarse como trabajador</p>
+
+      {/* Step indicator */}
+      <div className="flex items-center gap-3 mb-10">
+        <div className={`flex items-center gap-2 ${step >= 1 ? "text-gray-900" : "text-gray-300"}`}>
+          <span className={`w-7 h-7 rounded-full text-xs font-bold flex items-center justify-center ${step >= 1 ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-400"}`}>1</span>
+          <span className="text-sm font-medium">Mint Identity</span>
+        </div>
+        <div className={`h-px flex-1 ${step >= 2 ? "bg-gray-900" : "bg-gray-200"} transition-colors`} />
+        <div className={`flex items-center gap-2 ${step >= 2 ? "text-gray-900" : "text-gray-300"}`}>
+          <span className={`w-7 h-7 rounded-full text-xs font-bold flex items-center justify-center ${step >= 2 ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-400"}`}>2</span>
+          <span className="text-sm font-medium">Link Profile</span>
+        </div>
       </div>
 
       {step === 1 && (
-        <Card className="glass-card rounded-2xl border-0 animate-fade-up">
-          <CardHeader>
-            <CardTitle>Step 1: Create On-Chain Identity</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-sm text-gray-500">
+        <div className="animate-fade-up space-y-6">
+          <div className="rounded-2xl border border-gray-100 p-6 sm:p-8">
+            <h2 className="font-bold text-lg mb-2">Create On-Chain Identity</h2>
+            <p className="text-sm text-gray-500 mb-6 leading-relaxed">
               This mints an agentId NFT in the official ERC-8004 IdentityRegistry.
               You <strong>own</strong> this NFT — it&apos;s your portable, self-sovereign identity.
             </p>
-            <Button onClick={handleStep1} disabled={identityPending} className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 shadow-lg shadow-blue-500/20" size="lg">
-              {identityPending ? "Minting Identity..." : "Mint Identity NFT / Crear Identidad"}
+            <Button onClick={handleStep1} disabled={identityPending} className="w-full h-12 rounded-full bg-gray-900 hover:bg-gray-800 text-white text-sm font-medium transition-all" size="lg">
+              {identityPending ? "Minting Identity..." : "Mint Identity NFT"}
             </Button>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
 
       {step === 2 && (
-        <Card className="glass-card rounded-2xl border-0 animate-fade-up">
-          <CardHeader>
-            <CardTitle>Step 2: Link to ShieldWorker</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-sm text-gray-500">
-              Link your identity to a zone for parametric protection coverage.
-            </p>
+        <div className="animate-fade-up space-y-6">
+          <div className="rounded-2xl border border-gray-100 p-6 sm:p-8 space-y-5">
+            <div>
+              <h2 className="font-bold text-lg mb-2">Link to ShieldWorker</h2>
+              <p className="text-sm text-gray-500 leading-relaxed">
+                Link your identity to a zone for parametric protection coverage.
+              </p>
+            </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">Agent ID</label>
+              <label className="block text-xs font-medium tracking-wide uppercase text-gray-400 mb-2">Agent ID</label>
               <input
                 type="number"
-                className="w-full border rounded-xl px-3 py-2.5 text-sm bg-white/60 backdrop-blur-sm focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all outline-none"
+                className={inputClass}
                 value={agentId?.toString() ?? ""}
                 onChange={(e) => setAgentId(BigInt(e.target.value || "0"))}
                 placeholder="Enter your agentId"
               />
               {agentId && agentId > 0n && (
-                <p className="text-xs text-green-600 mt-1">
+                <p className="text-xs text-emerald-600 mt-2 font-medium">
                   AgentId #{agentId.toString()} detected from mint transaction
                 </p>
               )}
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">Worker Type / Tipo de Trabajo</label>
-              <select
-                className="w-full border rounded-xl px-3 py-2.5 text-sm bg-white/60 backdrop-blur-sm focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all outline-none"
-                value={workerType}
-                onChange={(e) => setWorkerType(e.target.value)}
-              >
+              <label className="block text-xs font-medium tracking-wide uppercase text-gray-400 mb-2">Worker Type / Tipo de Trabajo</label>
+              <select className={inputClass} value={workerType} onChange={(e) => setWorkerType(e.target.value)}>
                 <option value="">Select type...</option>
                 {WORKER_TYPES.map((t) => (
                   <option key={t.value} value={t.value}>{t.label}</option>
@@ -205,12 +190,8 @@ export default function RegisterPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">Zone / Zona</label>
-              <select
-                className="w-full border rounded-xl px-3 py-2.5 text-sm bg-white/60 backdrop-blur-sm focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all outline-none"
-                value={zone}
-                onChange={(e) => setZone(e.target.value)}
-              >
+              <label className="block text-xs font-medium tracking-wide uppercase text-gray-400 mb-2">Zone / Zona</label>
+              <select className={inputClass} value={zone} onChange={(e) => setZone(e.target.value)}>
                 <option value="">Select zone...</option>
                 {ZONES.map((z) => (
                   <option key={z.value} value={z.value}>{z.label}</option>
@@ -221,13 +202,13 @@ export default function RegisterPage() {
             <Button
               onClick={handleStep2}
               disabled={workerPending || !workerType || !zone || !agentId}
-              className="w-full bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 shadow-lg shadow-emerald-500/20"
+              className="w-full h-12 rounded-full bg-gray-900 hover:bg-gray-800 text-white text-sm font-medium transition-all"
               size="lg"
             >
-              {workerPending ? "Registering..." : "Complete Registration / Completar Registro"}
+              {workerPending ? "Registering..." : "Complete Registration"}
             </Button>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
     </div>
   );

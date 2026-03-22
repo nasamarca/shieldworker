@@ -13,28 +13,23 @@ import {
 import { useSubmitTrigger, useExecuteBatchPayout } from "@/hooks/useShieldActions";
 import { formatUSDC, formatDate, snowtraceLink } from "@/lib/format";
 import { ZONES, EVENT_TYPES } from "@/lib/constants";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 
 // ── Affected workers sub-component ──────────────────────────────────
 
 function AffectedWorkersList({ triggerId }: { triggerId: bigint }) {
   const workers = useAffectedWorkers(client, triggerId);
-
   if (workers.length === 0) return null;
   return (
-    <div className="mt-2">
-      <p className="text-xs font-medium text-gray-500 mb-1">
-        Affected Workers ({workers.length}):
-      </p>
-      <div className="flex flex-wrap gap-1">
+    <div className="mt-3">
+      <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Affected Workers ({workers.length})</p>
+      <div className="flex flex-wrap gap-1.5">
         {workers.map((id) => (
-          <Badge key={id.toString()} variant="outline" className="text-xs font-mono">
+          <span key={id.toString()} className="px-2.5 py-1 rounded-full border border-gray-200 text-xs font-mono text-gray-600">
             #{id.toString()}
-          </Badge>
+          </span>
         ))}
       </div>
     </div>
@@ -53,72 +48,60 @@ function TriggerCard({
   payoutPending: boolean;
 }) {
   const [showWorkers, setShowWorkers] = useState(false);
-
-  const remaining =
-    Number(trigger.workersAffected) - Number(trigger.workersProcessed);
+  const remaining = Number(trigger.workersAffected) - Number(trigger.workersProcessed);
 
   return (
-    <Card className={`glass-card rounded-2xl border-0 ${trigger.fullyProcessed ? "opacity-75" : "hover-lift"}`}>
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-base">
-            Trigger #{trigger.id.toString()}
-          </CardTitle>
-          <Badge
-            variant={trigger.fullyProcessed ? "default" : "secondary"}
-            className={trigger.fullyProcessed ? "bg-green-600" : "bg-amber-500 text-white"}
+    <div className={`rounded-2xl border p-6 transition-all ${trigger.fullyProcessed ? "border-gray-100 opacity-70" : "border-gray-200 hover:border-gray-300"}`}>
+      <div className="flex items-center justify-between mb-4">
+        <p className="font-bold">Trigger #{trigger.id.toString()}</p>
+        <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+          trigger.fullyProcessed
+            ? "bg-emerald-100 text-emerald-700"
+            : "bg-amber-100 text-amber-700"
+        }`}>
+          {trigger.fullyProcessed ? "COMPLETED" : `PENDING (${remaining} left)`}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm mb-4">
+        {[
+          { label: "Event", value: trigger.eventType },
+          { label: "Zone", value: trigger.zone },
+          { label: "Time", value: trigger.timestamp > 0n ? formatDate(trigger.timestamp) : "—" },
+          { label: "Affected", value: trigger.workersAffected.toString(), bold: true },
+          { label: "Processed", value: `${trigger.workersProcessed.toString()} / ${trigger.workersAffected.toString()}` },
+          { label: "Payout/Worker", value: formatUSDC(trigger.payoutPerWorker), bold: true },
+          { label: "Total Paid", value: formatUSDC(trigger.totalPayouts) },
+        ].map((row) => (
+          <div key={row.label} className="flex justify-between">
+            <span className="text-gray-400">{row.label}</span>
+            <span className={row.bold ? "font-bold" : "font-medium"}>{row.value}</span>
+          </div>
+        ))}
+      </div>
+
+      <button
+        onClick={() => setShowWorkers(!showWorkers)}
+        className="text-xs text-gray-400 hover:text-gray-900 transition-colors"
+      >
+        {showWorkers ? "Hide workers ↑" : "Show affected workers →"}
+      </button>
+      {showWorkers && <AffectedWorkersList triggerId={trigger.id} />}
+
+      {!trigger.fullyProcessed && Number(trigger.workersAffected) > 0 && (
+        <>
+          <div className="section-divider my-4" />
+          <Button
+            onClick={() => onExecutePayout(trigger.id)}
+            disabled={payoutPending}
+            className="w-full h-11 rounded-full bg-gray-900 hover:bg-gray-800 text-white text-sm font-medium transition-all"
+            size="sm"
           >
-            {trigger.fullyProcessed ? "COMPLETED" : `PENDING (${remaining} left)`}
-          </Badge>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-2">
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-          <span className="text-gray-500">Event</span>
-          <span className="font-medium">{trigger.eventType}</span>
-          <span className="text-gray-500">Zone</span>
-          <span className="font-medium">{trigger.zone}</span>
-          <span className="text-gray-500">Time</span>
-          <span>{trigger.timestamp > 0n ? formatDate(trigger.timestamp) : "—"}</span>
-          <span className="text-gray-500">Workers Affected</span>
-          <span className="font-bold">{trigger.workersAffected.toString()}</span>
-          <span className="text-gray-500">Workers Processed</span>
-          <span>
-            {trigger.workersProcessed.toString()} / {trigger.workersAffected.toString()}
-          </span>
-          <span className="text-gray-500">Payout / Worker</span>
-          <span className="font-bold">{formatUSDC(trigger.payoutPerWorker)}</span>
-          <span className="text-gray-500">Total Paid</span>
-          <span>{formatUSDC(trigger.totalPayouts)}</span>
-        </div>
-
-        {/* Show affected workers toggle */}
-        <button
-          onClick={() => setShowWorkers(!showWorkers)}
-          className="text-xs text-blue-600 hover:underline"
-        >
-          {showWorkers ? "Hide affected workers" : "Show affected workers"}
-        </button>
-        {showWorkers && <AffectedWorkersList triggerId={trigger.id} />}
-
-        {/* Execute payout button for pending triggers */}
-        {!trigger.fullyProcessed && Number(trigger.workersAffected) > 0 && (
-          <>
-            <Separator />
-            <Button
-              onClick={() => onExecutePayout(trigger.id)}
-              disabled={payoutPending}
-              className="w-full bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 shadow-lg shadow-emerald-500/20"
-              size="sm"
-            >
-              {payoutPending
-                ? "Executing..."
-                : `Execute Batch Payout (up to 20 workers)`}
-            </Button>
-          </>
-        )}
-      </CardContent>
-    </Card>
+            {payoutPending ? "Executing..." : "Execute Batch Payout"}
+          </Button>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -137,17 +120,21 @@ export default function AdminPage() {
 
   if (!account) {
     return (
-      <div className="max-w-lg mx-auto px-4 py-16 text-center">
-        <h1 className="text-2xl font-bold mb-4">Connect Wallet First</h1>
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-3xl font-extrabold mb-3">Connect Wallet</h1>
+        </div>
       </div>
     );
   }
 
   if (!isAdmin) {
     return (
-      <div className="max-w-lg mx-auto px-4 py-16 text-center">
-        <h1 className="text-2xl font-bold mb-4">Access Denied</h1>
-        <p className="text-gray-500">Only ORACLE_ROLE holders can access the admin panel.</p>
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-3xl font-extrabold mb-3">Access Denied</h1>
+          <p className="text-gray-400">Only ORACLE_ROLE holders can access the admin panel.</p>
+        </div>
       </div>
     );
   }
@@ -161,13 +148,9 @@ export default function AdminPage() {
       const receipt = await submitTrigger(eventType, zone);
       toast.success(`Trigger submitted for ${eventType} in ${zone}!`, {
         action: receipt?.transactionHash
-          ? {
-              label: "View on Snowtrace",
-              onClick: () => window.open(snowtraceLink(receipt.transactionHash), "_blank"),
-            }
+          ? { label: "View on Snowtrace", onClick: () => window.open(snowtraceLink(receipt.transactionHash), "_blank") }
           : undefined,
       });
-      // Wait for RPC to index, then refetch
       setTimeout(() => refetchTriggers(), 3000);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Unknown error";
@@ -180,10 +163,7 @@ export default function AdminPage() {
       const receipt = await executeBatchPayout(triggerId, 20n);
       toast.success(`Batch payout executed for Trigger #${triggerId}!`, {
         action: receipt?.transactionHash
-          ? {
-              label: "View on Snowtrace",
-              onClick: () => window.open(snowtraceLink(receipt.transactionHash), "_blank"),
-            }
+          ? { label: "View on Snowtrace", onClick: () => window.open(snowtraceLink(receipt.transactionHash), "_blank") }
           : undefined,
       });
       setTimeout(() => refetchTriggers(), 3000);
@@ -196,49 +176,39 @@ export default function AdminPage() {
   const pendingTriggers = triggers.filter((t) => !t.fullyProcessed);
   const completedTriggers = triggers.filter((t) => t.fullyProcessed);
 
+  const inputClass = "w-full border border-gray-200 rounded-xl px-4 py-3 text-sm bg-gray-50/50 focus:bg-white focus:ring-2 focus:ring-gray-900/10 focus:border-gray-300 transition-all outline-none";
+
   return (
-    <div className="max-w-4xl mx-auto px-4 py-16 animate-fade-up">
-      <div className="flex items-center gap-3 mb-8">
-        <h1 className="text-3xl font-bold">Admin Panel</h1>
-        <Badge variant="outline">ORACLE_ROLE</Badge>
+    <div className="max-w-3xl mx-auto px-4 py-20 animate-fade-up">
+      <div className="flex items-center gap-3 mb-2">
+        <p className="text-sm font-medium tracking-widest uppercase text-gray-400">Admin</p>
+        <span className="px-2.5 py-1 rounded-full border border-gray-200 text-xs font-medium text-gray-500">ORACLE_ROLE</span>
       </div>
+      <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight mb-12">Control Panel</h1>
 
       {/* Pool overview */}
-      <div className="grid grid-cols-3 gap-4 mb-8 stagger">
-        <Card className="glass-card rounded-2xl border-0 hover-lift animate-fade-up">
-          <CardContent className="pt-6 text-center">
-            <p className="text-sm text-gray-500">Pool Balance</p>
-            <p className="text-2xl font-bold">{formatUSDC(poolBalance)}</p>
-          </CardContent>
-        </Card>
-        <Card className="glass-card rounded-2xl border-0 hover-lift animate-fade-up">
-          <CardContent className="pt-6 text-center">
-            <p className="text-sm text-gray-500">Workers</p>
-            <p className="text-2xl font-bold">{totalWorkers.toString()}</p>
-          </CardContent>
-        </Card>
-        <Card className="glass-card rounded-2xl border-0 hover-lift animate-fade-up">
-          <CardContent className="pt-6 text-center">
-            <p className="text-sm text-gray-500">Total Payouts</p>
-            <p className="text-2xl font-bold">{formatUSDC(totalPayouts)}</p>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-3 gap-6 mb-12 stagger">
+        {[
+          { label: "Pool Balance", value: formatUSDC(poolBalance) },
+          { label: "Workers", value: totalWorkers.toString() },
+          { label: "Total Payouts", value: formatUSDC(totalPayouts) },
+        ].map((stat) => (
+          <div key={stat.label} className="text-center animate-fade-up">
+            <p className="text-xs font-medium tracking-widest uppercase text-gray-400 mb-2">{stat.label}</p>
+            <p className="text-3xl font-extrabold text-gray-900">{stat.value}</p>
+          </div>
+        ))}
       </div>
 
       {/* Submit trigger */}
-      <Card className="mb-8 glass-card rounded-2xl border-0">
-        <CardHeader>
-          <CardTitle>Submit Trigger Event / Reportar Evento</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
+      <div className="section-divider mb-10" />
+      <div className="mb-12">
+        <p className="text-xs font-medium tracking-widest uppercase text-gray-400 mb-4">Submit Trigger</p>
+        <div className="rounded-2xl border border-gray-100 p-6 space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium mb-1">Event Type</label>
-              <select
-                className="w-full border rounded-xl px-3 py-2.5 text-sm bg-white/60 backdrop-blur-sm focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all outline-none"
-                value={eventType}
-                onChange={(e) => setEventType(e.target.value)}
-              >
+              <label className="block text-xs font-medium tracking-wide uppercase text-gray-400 mb-2">Event Type</label>
+              <select className={inputClass} value={eventType} onChange={(e) => setEventType(e.target.value)}>
                 <option value="">Select event...</option>
                 {EVENT_TYPES.map((ev) => (
                   <option key={ev.value} value={ev.value}>{ev.label}</option>
@@ -246,12 +216,8 @@ export default function AdminPage() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">Zone</label>
-              <select
-                className="w-full border rounded-xl px-3 py-2.5 text-sm bg-white/60 backdrop-blur-sm focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all outline-none"
-                value={zone}
-                onChange={(e) => setZone(e.target.value)}
-              >
+              <label className="block text-xs font-medium tracking-wide uppercase text-gray-400 mb-2">Zone</label>
+              <select className={inputClass} value={zone} onChange={(e) => setZone(e.target.value)}>
                 <option value="">Select zone...</option>
                 {ZONES.map((z) => (
                   <option key={z.value} value={z.value}>{z.label}</option>
@@ -262,70 +228,53 @@ export default function AdminPage() {
           <Button
             onClick={handleSubmitTrigger}
             disabled={triggerPending || !eventType || !zone}
-            className="w-full bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 shadow-lg shadow-red-500/20"
+            className="w-full h-12 rounded-full bg-red-600 hover:bg-red-700 text-white text-sm font-medium transition-all"
           >
-            {triggerPending ? "Submitting..." : "Submit Trigger / Reportar Evento"}
+            {triggerPending ? "Submitting..." : "Submit Trigger Event"}
           </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* Trigger list */}
-      <div className="space-y-6">
-        {/* Pending triggers */}
+      <div className="space-y-10">
         {pendingTriggers.length > 0 && (
           <div>
-            <h2 className="text-lg font-bold mb-3 flex items-center gap-2">
-              Pending Triggers
-              <Badge variant="secondary" className="bg-amber-500 text-white">
-                {pendingTriggers.length}
-              </Badge>
-            </h2>
-            <div className="space-y-3">
+            <div className="section-divider mb-8" />
+            <div className="flex items-center gap-2 mb-6">
+              <p className="text-xs font-medium tracking-widest uppercase text-gray-400">Pending Triggers</p>
+              <Badge variant="secondary" className="bg-amber-100 text-amber-700 text-xs">{pendingTriggers.length}</Badge>
+            </div>
+            <div className="space-y-4">
               {pendingTriggers.map((t) => (
-                <TriggerCard
-                  key={t.id.toString()}
-                  trigger={t}
-                  onExecutePayout={handleExecutePayout}
-                  payoutPending={payoutPending}
-                />
+                <TriggerCard key={t.id.toString()} trigger={t} onExecutePayout={handleExecutePayout} payoutPending={payoutPending} />
               ))}
             </div>
           </div>
         )}
 
-        {/* Completed triggers */}
         {completedTriggers.length > 0 && (
           <div>
-            <h2 className="text-lg font-bold mb-3 flex items-center gap-2">
-              Completed Triggers
-              <Badge variant="outline">{completedTriggers.length}</Badge>
-            </h2>
-            <div className="space-y-3">
+            <div className="section-divider mb-8" />
+            <div className="flex items-center gap-2 mb-6">
+              <p className="text-xs font-medium tracking-widest uppercase text-gray-400">Completed Triggers</p>
+              <span className="px-2 py-0.5 rounded-full border border-gray-200 text-xs text-gray-400">{completedTriggers.length}</span>
+            </div>
+            <div className="space-y-4">
               {completedTriggers.map((t) => (
-                <TriggerCard
-                  key={t.id.toString()}
-                  trigger={t}
-                  onExecutePayout={handleExecutePayout}
-                  payoutPending={payoutPending}
-                />
+                <TriggerCard key={t.id.toString()} trigger={t} onExecutePayout={handleExecutePayout} payoutPending={payoutPending} />
               ))}
             </div>
           </div>
         )}
 
-        {/* Error / empty state */}
         {triggersError && (
-          <p className="text-center text-amber-500 py-8">
-            Failed to load triggers: {triggersError}
-          </p>
+          <p className="text-center text-amber-500 py-8 text-sm">Failed to load triggers: {triggersError}</p>
         )}
         {triggers.length === 0 && !triggersLoading && !triggersError && (
-          <p className="text-center text-gray-400 py-8">
-            No triggers submitted yet. Submit a trigger event above.
-          </p>
+          <p className="text-center text-gray-400 py-12 text-sm">No triggers submitted yet.</p>
         )}
         {triggersLoading && (
-          <p className="text-center text-gray-400 py-8">Loading triggers...</p>
+          <p className="text-center text-gray-400 py-12 text-sm">Loading triggers...</p>
         )}
       </div>
     </div>
